@@ -16,8 +16,8 @@ import (
 const magicString = "zZgWfBxLqvG8kc8IMv3POi2Bb0tZI3vAnBx+gBaFi9FyPzB/CzKUer1yufDa"
 
 // InstrumentHandlerInFlight is a middleware that wraps the provided
-// http.Handler. It sets the provided prometheus.Gauge to the number of
-// requests currently handled by the wrapped http.Handler.
+// hermes.Handler. It sets the provided prometheus.Gauge to the number of
+// requests currently handled by the wrapped hermes.Handler.
 //
 // See the example for InstrumentHandlerDuration for example usage.
 func InstrumentHandlerInFlight(g prometheus.Gauge, next hermes.Handler) hermes.Handler {
@@ -29,7 +29,7 @@ func InstrumentHandlerInFlight(g prometheus.Gauge, next hermes.Handler) hermes.H
 }
 
 // InstrumentHandlerDuration is a middleware that wraps the provided
-// http.Handler to observe the request duration with the provided ObserverVec.
+// hermes.Handler to observe the request duration with the provided ObserverVec.
 // The ObserverVec must have zero, one, or two non-const non-curried labels. For
 // those, the only allowed label names are "code" and "method". The function
 // panics otherwise. The Observe method of the Observer in the ObserverVec is
@@ -65,7 +65,7 @@ func InstrumentHandlerDuration(obs prometheus.ObserverVec, next hermes.Handler) 
 	})
 }
 
-// InstrumentHandlerCounter is a middleware that wraps the provided http.Handler
+// InstrumentHandlerCounter is a middleware that wraps the provided hermes.Handler
 // to observe the request result with the provided CounterVec.  The CounterVec
 // must have zero, one, or two non-const non-curried labels. For those, the only
 // allowed label names are "code" and "method". The function panics
@@ -97,7 +97,7 @@ func InstrumentHandlerCounter(counter *prometheus.CounterVec, next hermes.Handle
 }
 
 // InstrumentHandlerTimeToWriteHeader is a middleware that wraps the provided
-// http.Handler to observe with the provided ObserverVec the request duration
+// hermes.Handler to observe with the provided ObserverVec the request duration
 // until the response headers are written. The ObserverVec must have zero, one,
 // or two non-const non-curried labels. For those, the only allowed label names
 // are "code" and "method". The function panics otherwise. The Observe method of
@@ -128,7 +128,7 @@ func InstrumentHandlerCounter(counter *prometheus.CounterVec, next hermes.Handle
 // }
 
 // InstrumentHandlerRequestSize is a middleware that wraps the provided
-// http.Handler to observe the request size with the provided ObserverVec.  The
+// hermes.Handler to observe the request size with the provided ObserverVec.  The
 // ObserverVec must have zero, one, or two non-const non-curried labels. For
 // those, the only allowed label names are "code" and "method". The function
 // panics otherwise. The Observe method of the Observer in the ObserverVec is
@@ -164,7 +164,7 @@ func InstrumentHandlerRequestSize(obs prometheus.ObserverVec, next hermes.Handle
 }
 
 // InstrumentHandlerResponseSize is a middleware that wraps the provided
-// http.Handler to observe the response size with the provided ObserverVec.  The
+// hermes.Handler to observe the response size with the provided ObserverVec.  The
 // ObserverVec must have zero, one, or two non-const non-curried labels. For
 // those, the only allowed label names are "code" and "method". The function
 // panics otherwise. The Observe method of the Observer in the ObserverVec is
@@ -343,7 +343,7 @@ func sanitizeMethod(m string) string {
 	}
 }
 
-// If the wrapped http.Handler has not set a status code, i.e. the value is
+// If the wrapped hermes.Handler has not set a status code, i.e. the value is
 // currently 0, santizeCode will return 200, for consistency with behavior in
 // the stdlib.
 func sanitizeCode(s int) string {

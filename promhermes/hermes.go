@@ -1,21 +1,16 @@
-// Package promhermes provides tooling around HTTP servers and clients.
+// Package promhermes provides tooling around HTTP servers.
 //
-// First, the package allows the creation of http.Handler instances to expose
+// First, the package allows the creation of hermes.Handler instances to expose
 // Prometheus metrics via HTTP. promhermes.Handler acts on the
 // prometheus.DefaultGatherer. With HandlerFor, you can create a handler for a
 // custom registry or anything that implements the Gatherer interface. It also
 // allows the creation of handlers that act differently on errors or allow to
 // log errors.
 //
-// Second, the package provides tooling to instrument instances of http.Handler
+// Second, the package provides tooling to instrument instances of hermes.Handler
 // via middleware. Middleware wrappers follow the naming scheme
 // InstrumentHandlerX, where X describes the intended use of the middleware.
 // See each function's doc comment for specific details.
-//
-// Finally, the package allows for an http.RoundTripper to be instrumented via
-// middleware. Middleware wrappers follow the naming scheme
-// InstrumentRoundTripperX, where X describes the intended use of the
-// middleware. See each function's doc comment for specific details.
 package promhermes
 
 import (
@@ -50,13 +45,13 @@ var gzipPool = sync.Pool{
 var ErrMaxConcurrentRequests = errors.New("limit of concurrent requests reached")
 var ErrTimeout = errors.New("configured timeout exceeded")
 
-// Handler returns an http.Handler for the prometheus.DefaultGatherer, using
+// Handler returns an hermes.Handler for the prometheus.DefaultGatherer, using
 // default HandlerOpts, i.e. it reports the first error as an HTTP error, it has
 // no error logging, and it applies compression if requested by the client.
 //
-// The returned http.Handler is already instrumented using the
+// The returned hermes.Handler is already instrumented using the
 // InstrumentMetricHandler function and the prometheus.DefaultRegisterer. If you
-// create multiple http.Handlers by separate calls of the Handler function, the
+// create multiple hermes.Handlers by separate calls of the Handler function, the
 // metrics used for instrumentation will be shared between them, providing
 // global scrape counts.
 //
@@ -70,9 +65,9 @@ func Handler() hermes.Handler {
 	)
 }
 
-// HandlerFor returns an uninstrumented http.Handler for the provided
+// HandlerFor returns an uninstrumented hermes.Handler for the provided
 // Gatherer. The behavior of the Handler is defined by the provided
-// HandlerOpts. Thus, HandlerFor is useful to create http.Handlers for custom
+// HandlerOpts. Thus, HandlerFor is useful to create hermes.Handlers for custom
 // Gatherers, with non-default HandlerOpts, and/or with custom (or no)
 // instrumentation. Use the InstrumentMetricHandler function to apply the same
 // kind of instrumentation as it is used by the Handler function.
@@ -210,15 +205,15 @@ func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) hermes.Handler {
 			return r
 		case <-ctx.Done():
 			return res.Error(ErrTimeout, fmt.Sprintf(
-				"Exceeded configured timeout of %v.\n",
+				"Exceeded configured timeout of %v.",
 				opts.Timeout,
 			), hermes.StatusServiceUnavailable, errors.Code("timeout"), errors.Module("promhermes"))
 		}
 	})
 }
 
-// InstrumentMetricHandler is usually used with an http.Handler returned by the
-// HandlerFor function. It instruments the provided http.Handler with two
+// InstrumentMetricHandler is usually used with an hermes.Handler returned by the
+// HandlerFor function. It instruments the provided hermes.Handler with two
 // metrics: A counter vector "promhermes_metric_handler_requests_total" to count
 // scrapes partitioned by HTTP status code, and a gauge
 // "promhermes_metric_handler_requests_in_flight" to track the number of
@@ -299,7 +294,7 @@ type Logger interface {
 	Println(v ...interface{})
 }
 
-// HandlerOpts specifies options how to serve metrics via an http.Handler. The
+// HandlerOpts specifies options how to serve metrics via an hermes.Handler. The
 // zero value of HandlerOpts is a reasonable default.
 type HandlerOpts struct {
 	// ErrorLog specifies an optional logger for errors collecting and
@@ -354,10 +349,10 @@ func gzipAccepted(req hermes.Request) bool {
 	return false
 }
 
-// httpError removes any content-encoding header and then calls http.Error with
-// the provided error and http.StatusInternalServerErrer. Error contents is
+// httpError removes any content-encoding header and then calls hermes.Error with
+// the provided error and hermes.StatusInternalServerErrer. Error contents is
 // supposed to be uncompressed plain text. However, same as with a plain
-// http.Error, any header settings will be void if the header has already been
+// hermes.Error, any header settings will be void if the header has already been
 // sent. The error message will still be written to the writer, but it will
 // probably be of limited use.
 func httpError(req hermes.Request, res hermes.Response, err error) hermes.Result {

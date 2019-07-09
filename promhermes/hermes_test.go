@@ -2,14 +2,14 @@ package promhermes
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"log"
-	"strings"
-	"testing"
 	"time"
 
 	"github.com/lab259/hermes"
-
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -43,62 +43,59 @@ func (b blockingCollector) Collect(ch chan<- prometheus.Metric) {
 	<-b.Block
 }
 
-func TestHandlerErrorHandling(t *testing.T) {
+var _ = Describe("Handler", func() {
+	When("using custom error handling", func() {
+		// Create a registry that collects a MetricFamily with two elements,
+		// another with one, and reports an error. Further down, we'll use the
+		// same registry in the HandlerOpts.
+		reg := prometheus.NewRegistry()
 
-	// Create a registry that collects a MetricFamily with two elements,
-	// another with one, and reports an error. Further down, we'll use the
-	// same registry in the HandlerOpts.
-	reg := prometheus.NewRegistry()
+		cnt := prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "the_count",
+			Help: "Ah-ah-ah! Thunder and lightning!",
+		})
+		reg.MustRegister(cnt)
 
-	cnt := prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "the_count",
-		Help: "Ah-ah-ah! Thunder and lightning!",
-	})
-	reg.MustRegister(cnt)
+		cntVec := prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name:        "name",
+				Help:        "docstring",
+				ConstLabels: prometheus.Labels{"constname": "constvalue"},
+			},
+			[]string{"labelname"},
+		)
+		cntVec.WithLabelValues("val1").Inc()
+		cntVec.WithLabelValues("val2").Inc()
+		reg.MustRegister(cntVec)
 
-	cntVec := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name:        "name",
-			Help:        "docstring",
-			ConstLabels: prometheus.Labels{"constname": "constvalue"},
-		},
-		[]string{"labelname"},
-	)
-	cntVec.WithLabelValues("val1").Inc()
-	cntVec.WithLabelValues("val2").Inc()
-	reg.MustRegister(cntVec)
+		reg.MustRegister(errorCollector{})
 
-	reg.MustRegister(errorCollector{})
+		logBuf := &bytes.Buffer{}
+		logger := log.New(logBuf, "", 0)
 
-	logBuf := &bytes.Buffer{}
-	logger := log.New(logBuf, "", 0)
+		router := hermes.DefaultRouter()
+		router.Get("/http", HandlerFor(reg, HandlerOpts{
+			ErrorLog:      logger,
+			ErrorHandling: HTTPErrorOnError,
+			Registry:      reg,
+		}))
+		router.Get("/continue", HandlerFor(reg, HandlerOpts{
+			ErrorLog:      logger,
+			ErrorHandling: ContinueOnError,
+			Registry:      reg,
+		}))
+		router.Get("/panic", HandlerFor(reg, HandlerOpts{
+			ErrorLog:      logger,
+			ErrorHandling: PanicOnError,
+			Registry:      reg,
+		}))
 
-	router := hermes.DefaultRouter()
-	router.Get("/http", HandlerFor(reg, HandlerOpts{
-		ErrorLog:      logger,
-		ErrorHandling: HTTPErrorOnError,
-		Registry:      reg,
-	}))
-	router.Get("/continue", HandlerFor(reg, HandlerOpts{
-		ErrorLog:      logger,
-		ErrorHandling: ContinueOnError,
-		Registry:      reg,
-	}))
-	router.Get("/panic", HandlerFor(reg, HandlerOpts{
-		ErrorLog:      logger,
-		ErrorHandling: PanicOnError,
-		Registry:      reg,
-	}))
+		handler := router.Handler()
 
-	handler := router.Handler()
-
-	wantMsg := `error gathering metrics: error collecting metric Desc{fqName: "invalid_metric", help: "not helpful", constLabels: {}, variableLabels: []}: collect error
+		wantMsg := `error gathering metrics: error collecting metric Desc{fqName: "invalid_metric", help: "not helpful", constLabels: {}, variableLabels: []}: collect error
 `
-	wantErrorBody := `An error has occurred while serving metrics:
-
-error collecting metric Desc{fqName: "invalid_metric", help: "not helpful", constLabels: {}, variableLabels: []}: collect error
-`
-	wantOKBody1 := `# HELP name docstring
+		wantErrorBody := `An error has occurred while serving metrics: error collecting metric Desc{fqName: "invalid_metric", help: "not helpful", constLabels: {}, variableLabels: []}: collect error`
+		wantOKBody1 := `# HELP name docstring
 # TYPE name counter
 name{constname="constvalue",labelname="val1"} 1
 name{constname="constvalue",labelname="val2"} 1
@@ -110,10 +107,10 @@ promhermes_metric_handler_errors_total{cause="gathering"} 1
 # TYPE the_count counter
 the_count 0
 `
-	// It might happen that counting the gathering error makes it to the
-	// promhermes_metric_handler_errors_total counter before it is gathered
-	// itself. Thus, we have to bodies that are acceptable for the test.
-	wantOKBody2 := `# HELP name docstring
+		// It might happen that counting the gathering error makes it to the
+		// promhermes_metric_handler_errors_total counter before it is gathered
+		// itself. Thus, we have to bodies that are acceptable for the test.
+		wantOKBody2 := `# HELP name docstring
 # TYPE name counter
 name{constname="constvalue",labelname="val1"} 1
 name{constname="constvalue",labelname="val2"} 1
@@ -126,156 +123,142 @@ promhermes_metric_handler_errors_total{cause="gathering"} 2
 the_count 0
 `
 
-	ctx := createRequestCtx("GET", "/http")
-	ctx.Request.Header.Add("Accept", "text/plain")
-	handler(ctx)
-	if got, want := ctx.Response.StatusCode(), hermes.StatusInternalServerError; got != want {
-		t.Errorf("got HTTP status code %d, want %d", got, want)
-	}
-	if got := logBuf.String(); got != wantMsg {
-		t.Errorf("got log message:\n%s\nwant log message:\n%s\n", got, wantMsg)
-	}
-	if got := string(ctx.Response.Body()); strings.Contains(got, wantMsg) {
-		t.Errorf("got body:\n%s\nwant body:\n%s\n", got, wantErrorBody)
-	}
-	logBuf.Reset()
+		It("should return a http error on error", func() {
+			logBuf.Reset()
+			ctx := createRequestCtx("GET", "/http")
+			ctx.Request.Header.Add("Accept", "text/plain")
+			handler(ctx)
+			got, want := ctx.Response.StatusCode(), hermes.StatusInternalServerError
+			Expect(got).To(Equal(want))
 
-	ctx = createRequestCtx("GET", "/continue")
-	ctx.Request.Header.Add("Accept", "text/plain")
-	handler(ctx)
-	if got, want := ctx.Response.StatusCode(), hermes.StatusOK; got != want {
-		t.Errorf("got HTTP status code %d, want %d", got, want)
-	}
-	if got := logBuf.String(); got != wantMsg {
-		t.Errorf("got log message %q, want %q", got, wantMsg)
-	}
-	if got := string(ctx.Response.Body()); got != wantOKBody1 && got != wantOKBody2 {
-		t.Errorf("got body %q, want either %q or %q", got, wantOKBody1, wantOKBody2)
-	}
+			Expect(logBuf.String()).To(Equal(wantMsg))
+			var httperr map[string]interface{}
+			Expect(json.Unmarshal(ctx.Response.Body(), &httperr)).To(Succeed())
+			Expect(httperr).To(HaveKeyWithValue("message", wantErrorBody))
+			Expect(httperr).To(HaveKeyWithValue("module", "promhermes"))
+			Expect(httperr).To(HaveKeyWithValue("code", "prometheus-failed"))
 
-	defer func() {
-		if err := recover(); err == nil {
-			t.Error("expected panic from panicHandler")
-		}
-	}()
+		})
 
-	ctx = createRequestCtx("GET", "/panic")
-	ctx.Request.Header.Add("Accept", "text/plain")
-	handler(ctx)
-}
+		It("should continue on error", func() {
+			logBuf.Reset()
+			ctx := createRequestCtx("GET", "/continue")
+			ctx.Request.Header.Add("Accept", "text/plain")
+			handler(ctx)
+			Expect(ctx.Response.StatusCode()).To(Equal(hermes.StatusOK))
+			Expect(logBuf.String()).To(Equal(wantMsg))
+			Expect(string(ctx.Response.Body())).To(Or(Equal(wantOKBody1), Equal(wantOKBody2)))
+		})
 
-func TestInstrumentMetricHandler(t *testing.T) {
-	reg := prometheus.NewRegistry()
-	h := InstrumentMetricHandler(reg, HandlerFor(reg, HandlerOpts{}))
-	// Do it again to test idempotency.
-	InstrumentMetricHandler(reg, HandlerFor(reg, HandlerOpts{}))
+		It("should panic on error", func() {
+			logBuf.Reset()
+			defer func() {
+				if err := recover(); err == nil {
+					Fail("expected panic from panicHandler")
+				}
+			}()
 
-	router := hermes.DefaultRouter()
-	router.Get("/", h)
+			ctx := createRequestCtx("GET", "/panic")
+			ctx.Request.Header.Add("Accept", "text/plain")
+			handler(ctx)
+		})
+	})
 
-	handler := router.Handler()
+	When("using InstrumentMetricHandler", func() {
+		It("should be idempotency", func() {
+			reg := prometheus.NewRegistry()
+			h := InstrumentMetricHandler(reg, HandlerFor(reg, HandlerOpts{}))
+			// Do it again to test idempotency.
+			InstrumentMetricHandler(reg, HandlerFor(reg, HandlerOpts{}))
 
-	reqCtx1 := createRequestCtx("GET", "/")
-	reqCtx1.Request.Header.Add("Accept", "test/plain")
+			router := hermes.DefaultRouter()
+			router.Get("/", h)
 
-	handler(reqCtx1)
-	if got, want := reqCtx1.Response.StatusCode(), hermes.StatusOK; got != want {
-		t.Errorf("got HTTP status code %d, want %d", got, want)
-	}
+			handler := router.Handler()
 
-	want := "promhermes_metric_handler_requests_in_flight 1\n"
-	if got := string(reqCtx1.Response.Body()); !strings.Contains(got, want) {
-		t.Errorf("got body %q, does not contain %q", got, want)
-	}
-	want = "promhermes_metric_handler_requests_total{code=\"200\"} 0\n"
-	if got := string(reqCtx1.Response.Body()); !strings.Contains(got, want) {
-		t.Errorf("got body %q, does not contain %q", got, want)
-	}
+			reqCtx1 := createRequestCtx("GET", "/")
+			reqCtx1.Request.Header.Add("Accept", "test/plain")
 
-	reqCtx2 := createRequestCtx("GET", "/")
-	reqCtx2.Request.Header.Add("Accept", "test/plain")
+			handler(reqCtx1)
+			Expect(reqCtx1.Response.StatusCode()).To(Equal(hermes.StatusOK))
 
-	handler(reqCtx2)
-	if got, want := reqCtx2.Response.StatusCode(), hermes.StatusOK; got != want {
-		t.Errorf("got HTTP status code %d, want %d", got, want)
-	}
+			want := "promhermes_metric_handler_requests_in_flight 1\n"
+			Expect(string(reqCtx1.Response.Body())).To(ContainSubstring(want))
+			want = "promhermes_metric_handler_requests_total{code=\"200\"} 0\n"
+			Expect(string(reqCtx1.Response.Body())).To(ContainSubstring(want))
 
-	want = "promhermes_metric_handler_requests_in_flight 1\n"
-	if got := string(reqCtx2.Response.Body()); !strings.Contains(got, want) {
-		t.Errorf("got body %q, does not contain %q", got, want)
-	}
-	want = "promhermes_metric_handler_requests_total{code=\"200\"} 1\n"
-	if got := string(reqCtx2.Response.Body()); !strings.Contains(got, want) {
-		t.Errorf("got body %q, does not contain %q", got, want)
-	}
-}
+			reqCtx2 := createRequestCtx("GET", "/")
+			reqCtx2.Request.Header.Add("Accept", "test/plain")
 
-func TestHandlerMaxRequestsInFlight(t *testing.T) {
-	reg := prometheus.NewRegistry()
+			handler(reqCtx2)
+			Expect(reqCtx2.Response.StatusCode()).To(Equal(hermes.StatusOK))
 
-	router := hermes.DefaultRouter()
-	router.Get("/", HandlerFor(reg, HandlerOpts{MaxRequestsInFlight: 1}))
+			want = "promhermes_metric_handler_requests_in_flight 1\n"
+			Expect(string(reqCtx2.Response.Body())).To(ContainSubstring(want))
 
-	handler := router.Handler()
+			want = "promhermes_metric_handler_requests_total{code=\"200\"} 1\n"
+			Expect(string(reqCtx2.Response.Body())).To(ContainSubstring(want))
+		})
+	})
 
-	reqCtx1 := createRequestCtx("GET", "/")
-	reqCtx1.Request.Header.Add("Accept", "test/plain")
+	When("using MaxRequestsInFlight", func() {
+		It("should fail when exceeded", func() {
+			reg := prometheus.NewRegistry()
 
-	reqCtx2 := createRequestCtx("GET", "/")
-	reqCtx2.Request.Header.Add("Accept", "test/plain")
+			router := hermes.DefaultRouter()
+			router.Get("/", HandlerFor(reg, HandlerOpts{MaxRequestsInFlight: 1}))
 
-	reqCtx3 := createRequestCtx("GET", "/")
-	reqCtx3.Request.Header.Add("Accept", "test/plain")
+			handler := router.Handler()
 
-	c := blockingCollector{Block: make(chan struct{}), CollectStarted: make(chan struct{}, 1)}
-	reg.MustRegister(c)
+			reqCtx1 := createRequestCtx("GET", "/")
+			reqCtx1.Request.Header.Add("Accept", "test/plain")
 
-	rq1Done := make(chan struct{})
-	go func() {
-		handler(reqCtx1)
-		close(rq1Done)
-	}()
-	<-c.CollectStarted
+			reqCtx2 := createRequestCtx("GET", "/")
+			reqCtx2.Request.Header.Add("Accept", "test/plain")
 
-	handler(reqCtx2)
+			reqCtx3 := createRequestCtx("GET", "/")
+			reqCtx3.Request.Header.Add("Accept", "test/plain")
 
-	if got, want := reqCtx2.Response.StatusCode(), hermes.StatusServiceUnavailable; got != want {
-		t.Errorf("got HTTP status code %d, want %d", got, want)
-	}
-	if got, want := string(reqCtx2.Response.Body()), "Limit of concurrent requests reached (1), try again later.\n"; strings.Contains(got, want) {
-		t.Errorf("got body %q, want %q", got, want)
-	}
+			c := blockingCollector{Block: make(chan struct{}), CollectStarted: make(chan struct{}, 1)}
+			reg.MustRegister(c)
 
-	close(c.Block)
-	<-rq1Done
+			rq1Done := make(chan struct{})
+			go func() {
+				handler(reqCtx1)
+				close(rq1Done)
+			}()
+			<-c.CollectStarted
 
-	handler(reqCtx3)
+			handler(reqCtx2)
 
-	if got, want := reqCtx3.Response.StatusCode(), hermes.StatusOK; got != want {
-		t.Errorf("got HTTP status code %d, want %d", got, want)
-	}
-}
+			Expect(reqCtx2.Response.StatusCode()).To(Equal(hermes.StatusServiceUnavailable))
+			Expect(string(reqCtx2.Response.Body())).To(ContainSubstring("Limit of concurrent requests reached (1), try again later."))
 
-func TestHandlerTimeout(t *testing.T) {
+			close(c.Block)
+			<-rq1Done
 
-	reg := prometheus.NewRegistry()
-	handler := HandlerFor(reg, HandlerOpts{Timeout: time.Millisecond})
+			handler(reqCtx3)
+			Expect(reqCtx3.Response.StatusCode()).To(Equal(hermes.StatusOK))
+		})
+	})
 
-	c := blockingCollector{Block: make(chan struct{}), CollectStarted: make(chan struct{}, 1)}
-	reg.MustRegister(c)
+	When("using Timeout", func() {
+		It("should return error when exceeded", func() {
+			reg := prometheus.NewRegistry()
+			handler := HandlerFor(reg, HandlerOpts{Timeout: time.Millisecond})
 
-	router := hermes.DefaultRouter()
-	router.Get("/", handler)
+			c := blockingCollector{Block: make(chan struct{}), CollectStarted: make(chan struct{}, 1)}
+			reg.MustRegister(c)
 
-	ctx := createRequestCtx("GET", "/")
-	router.Handler()(ctx)
+			router := hermes.DefaultRouter()
+			router.Get("/", handler)
 
-	if got, want := ctx.Response.StatusCode(), hermes.StatusServiceUnavailable; got != want {
-		t.Errorf("got HTTP status code %d, want %d", got, want)
-	}
-	if got, want := string(ctx.Response.Body()), "Exceeded configured timeout of 1ms.\n"; strings.Contains(got, want) {
-		t.Errorf("got body %q, want %q", got, want)
-	}
+			ctx := createRequestCtx("GET", "/")
+			router.Handler()(ctx)
 
-	close(c.Block) // To not leak a goroutine.
-}
+			Expect(ctx.Response.StatusCode()).To(Equal(hermes.StatusServiceUnavailable))
+			Expect(string(ctx.Response.Body())).To(ContainSubstring("Exceeded configured timeout of 1ms."))
+			close(c.Block) // To not leak a goroutine.
+		})
+	})
+})
