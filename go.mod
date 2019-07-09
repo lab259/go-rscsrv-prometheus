@@ -1,16 +1,16 @@
-module github.com/lab259/go-package-boilerplate
+module github.com/lab259/go-rscsrv-prometheus
 
 go 1.12
 
 require (
-	github.com/fatih/color v1.7.0 // indirect
 	github.com/jamillosantos/macchiato v0.0.0-20171220130318-3be045cc5033
-	github.com/mattn/go-colorable v0.0.9 // indirect
-	github.com/mattn/go-isatty v0.0.7 // indirect
+	github.com/klauspost/compress v1.5.0
+	github.com/lab259/go-package-boilerplate v0.0.0-20190708174238-3658243ba610
+	github.com/lab259/hermes v1.1.0
+	github.com/lab259/rlog v2.0.1+incompatible
 	github.com/onsi/ginkgo v1.8.0
 	github.com/onsi/gomega v1.5.0
-	golang.org/x/net v0.0.0-20190424112056-4829fb13d2c6 // indirect
-	golang.org/x/sys v0.0.0-20190429094411-2cc0cad0ac78 // indirect
-	golang.org/x/text v0.3.2 // indirect
-	gopkg.in/yaml.v2 v2.2.2 // indirect
+	github.com/prometheus/client_golang v1.0.0
+	github.com/prometheus/client_model v0.0.0-20190129233127-fd36f4220a90
+	github.com/prometheus/common v0.4.1
 )

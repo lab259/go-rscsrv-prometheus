@@ -1,11 +1,11 @@
-package boilerplate_test
+package promsrv_test
 
 import (
 	"testing"
 
-	"github.com/lab259/go-package-boilerplate/ginkgotest"
+	"github.com/lab259/go-rscsrv-prometheus/ginkgotest"
 )
 
 func TestPackage(t *testing.T) {
-	ginkgotest.Init("Boilerplate Suite", t)
+	ginkgotest.Init("promsrv Test Suite", t)
 }

@@ -1,14 +1,16 @@
-package boilerplate_test
+package promsrv_test
 
 import (
-	. "github.com/lab259/go-package-boilerplate"
+	. "github.com/lab259/go-rscsrv-prometheus"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Sum", func() {
+var _ = Describe("Prometheus - Service", func() {
 	It("works", func() {
-		Expect(Sum(1, 1)).To(Equal(2))
+		var srv Service
+
+		Expect(srv).ToNot(BeNil())
 	})
 })
