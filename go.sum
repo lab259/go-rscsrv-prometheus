@@ -44,6 +44,8 @@ github.com/klauspost/cpuid v1.2.1 h1:vJi+O/nMdFt0vqm8NZBI6wzALWdA2X+egi0ogNyrC/w
 github.com/klauspost/cpuid v1.2.1/go.mod h1:Pj4uuM528wm8OyEC2QMXAi2YiTZ96dNQPGgoMS4s3ek=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515/go.mod h1:+0opPa2QZZtGFBFZlji/RkVcI2GknAs/DXo4wKdlNEc=
+github.com/lab259/errors v2.1.0+incompatible h1:spmhLIqKUzsog6XhwOpeDY0oX8Q5NguDkMAtCB6trws=
+github.com/lab259/errors v2.1.0+incompatible/go.mod h1:MDDGb8dSRNqu9IVhE4C+nF2qFqPPO+n6/Nn1AqyI6rI=
 github.com/lab259/errors/v2 v2.2.0 h1:I2YKNMygf9LiBsyt0RkRRRFaVFUqSGHBzsG7Pe21zKk=
 github.com/lab259/errors/v2 v2.2.0/go.mod h1:bcuh1ha3APn7gzh8k1QMzuFXpqfBplbVKyClNpZ+H6U=
 github.com/lab259/go-package-boilerplate v0.0.0-20190708174238-3658243ba610 h1:PVMkjac7XUBo97t199QVkTvkvgvoPGhPc79nmP2F4Wc=

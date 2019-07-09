@@ -1,12 +1,12 @@
 package promhermes
 
 import (
-	"io"
 	"log"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
+	"github.com/valyala/fasthttp"
+
+	"github.com/lab259/hermes"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -166,6 +166,13 @@ func TestLabelCheck(t *testing.T) {
 	}
 }
 
+func createRequestCtx(method, path string) *fasthttp.RequestCtx {
+	ctx := &fasthttp.RequestCtx{}
+	ctx.Request.Header.SetMethod(method)
+	ctx.Request.URI().SetPath(path)
+	return ctx
+}
+
 func TestMiddlewareAPI(t *testing.T) {
 	reg := prometheus.NewRegistry()
 
@@ -211,8 +218,8 @@ func TestMiddlewareAPI(t *testing.T) {
 		[]string{},
 	)
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("OK"))
+	handler := hermes.Handler(func(req hermes.Request, res hermes.Response) hermes.Result {
+		return res.Data([]byte("OK"))
 	})
 
 	reg.MustRegister(inFlightGauge, counter, histVec, responseSize, writeHeaderVec)
@@ -220,102 +227,18 @@ func TestMiddlewareAPI(t *testing.T) {
 	chain := InstrumentHandlerInFlight(inFlightGauge,
 		InstrumentHandlerCounter(counter,
 			InstrumentHandlerDuration(histVec,
-				InstrumentHandlerTimeToWriteHeader(writeHeaderVec,
-					InstrumentHandlerResponseSize(responseSize, handler),
-				),
+				// InstrumentHandlerTimeToWriteHeader(writeHeaderVec,
+				InstrumentHandlerResponseSize(responseSize, handler),
+				// ),
 			),
 		),
 	)
 
-	r, _ := http.NewRequest("GET", "www.example.com", nil)
-	w := httptest.NewRecorder()
-	chain.ServeHTTP(w, r)
-}
+	router := hermes.DefaultRouter()
+	router.Get("/", chain)
 
-func TestInstrumentTimeToFirstWrite(t *testing.T) {
-	var i int
-	dobs := &responseWriterDelegator{
-		ResponseWriter: httptest.NewRecorder(),
-		observeWriteHeader: func(status int) {
-			i = status
-		},
-	}
-	d := newDelegator(dobs, nil)
-
-	d.WriteHeader(http.StatusOK)
-
-	if i != http.StatusOK {
-		t.Fatalf("failed to execute observeWriteHeader")
-	}
-}
-
-// testResponseWriter is an http.ResponseWriter that also implements
-// http.CloseNotifier, http.Flusher, and io.ReaderFrom.
-type testResponseWriter struct {
-	closeNotifyCalled, flushCalled, readFromCalled bool
-}
-
-func (t *testResponseWriter) Header() http.Header       { return nil }
-func (t *testResponseWriter) Write([]byte) (int, error) { return 0, nil }
-func (t *testResponseWriter) WriteHeader(int)           {}
-func (t *testResponseWriter) CloseNotify() <-chan bool {
-	t.closeNotifyCalled = true
-	return nil
-}
-func (t *testResponseWriter) Flush() { t.flushCalled = true }
-func (t *testResponseWriter) ReadFrom(io.Reader) (int64, error) {
-	t.readFromCalled = true
-	return 0, nil
-}
-
-// testFlusher is an http.ResponseWriter that also implements http.Flusher.
-type testFlusher struct {
-	flushCalled bool
-}
-
-func (t *testFlusher) Header() http.Header       { return nil }
-func (t *testFlusher) Write([]byte) (int, error) { return 0, nil }
-func (t *testFlusher) WriteHeader(int)           {}
-func (t *testFlusher) Flush()                    { t.flushCalled = true }
-
-func TestInterfaceUpgrade(t *testing.T) {
-	w := &testResponseWriter{}
-	d := newDelegator(w, nil)
-	//lint:ignore SA1019 http.CloseNotifier is deprecated but we don't want to
-	//remove support from client_golang yet.
-	d.(http.CloseNotifier).CloseNotify()
-	if !w.closeNotifyCalled {
-		t.Error("CloseNotify not called")
-	}
-	d.(http.Flusher).Flush()
-	if !w.flushCalled {
-		t.Error("Flush not called")
-	}
-	d.(io.ReaderFrom).ReadFrom(nil)
-	if !w.readFromCalled {
-		t.Error("ReadFrom not called")
-	}
-	if _, ok := d.(http.Hijacker); ok {
-		t.Error("delegator unexpectedly implements http.Hijacker")
-	}
-
-	f := &testFlusher{}
-	d = newDelegator(f, nil)
-	//lint:ignore SA1019 http.CloseNotifier is deprecated but we don't want to
-	//remove support from client_golang yet.
-	if _, ok := d.(http.CloseNotifier); ok {
-		t.Error("delegator unexpectedly implements http.CloseNotifier")
-	}
-	d.(http.Flusher).Flush()
-	if !w.flushCalled {
-		t.Error("Flush not called")
-	}
-	if _, ok := d.(io.ReaderFrom); ok {
-		t.Error("delegator unexpectedly implements io.ReaderFrom")
-	}
-	if _, ok := d.(http.Hijacker); ok {
-		t.Error("delegator unexpectedly implements http.Hijacker")
-	}
+	ctx := createRequestCtx("GET", "/")
+	router.Handler()(ctx)
 }
 
 func ExampleInstrumentHandlerDuration() {
@@ -355,11 +278,11 @@ func ExampleInstrumentHandlerDuration() {
 	)
 
 	// Create the handlers that will be wrapped by the middleware.
-	pushHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Push"))
+	pushHandler := hermes.Handler(func(req hermes.Request, res hermes.Response) hermes.Result {
+		return res.Data([]byte("Push"))
 	})
-	pullHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Pull"))
+	pullHandler := hermes.Handler(func(req hermes.Request, res hermes.Response) hermes.Result {
+		return res.Data([]byte("Pull"))
 	})
 
 	// Register all of the metrics in the standard registry.
@@ -382,11 +305,18 @@ func ExampleInstrumentHandlerDuration() {
 		),
 	)
 
-	http.Handle("/metrics", Handler())
-	http.Handle("/push", pushChain)
-	http.Handle("/pull", pullChain)
+	router := hermes.DefaultRouter()
+	router.Get("/metrics", Handler())
+	router.Get("/push", pushChain)
+	router.Get("/pull", pullChain)
 
-	if err := http.ListenAndServe(":3000", nil); err != nil {
+	app := hermes.NewApplication(hermes.ApplicationConfig{
+		HTTP: hermes.FasthttpServiceConfiguration{
+			Bind: ":3000",
+		},
+	}, router)
+
+	if err := app.Start(); err != nil {
 		log.Fatal(err)
 	}
 }

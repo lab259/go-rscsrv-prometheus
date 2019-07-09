@@ -19,14 +19,17 @@
 package promhermes
 
 import (
+	"bytes"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/lab259/errors/v2"
+	"github.com/lab259/hermes"
 	"github.com/prometheus/common/expfmt"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -44,6 +47,9 @@ var gzipPool = sync.Pool{
 	},
 }
 
+var ErrMaxConcurrentRequests = errors.New("limit of concurrent requests reached")
+var ErrTimeout = errors.New("configured timeout exceeded")
+
 // Handler returns an http.Handler for the prometheus.DefaultGatherer, using
 // default HandlerOpts, i.e. it reports the first error as an HTTP error, it has
 // no error logging, and it applies compression if requested by the client.
@@ -58,7 +64,7 @@ var gzipPool = sync.Pool{
 // anything that requires more customization (including using a non-default
 // Gatherer, different instrumentation, and non-default HandlerOpts), use the
 // HandlerFor function. See there for details.
-func Handler() http.Handler {
+func Handler() hermes.Handler {
 	return InstrumentMetricHandler(
 		prometheus.DefaultRegisterer, HandlerFor(prometheus.DefaultGatherer, HandlerOpts{}),
 	)
@@ -70,7 +76,7 @@ func Handler() http.Handler {
 // Gatherers, with non-default HandlerOpts, and/or with custom (or no)
 // instrumentation. Use the InstrumentMetricHandler function to apply the same
 // kind of instrumentation as it is used by the Handler function.
-func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) http.Handler {
+func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) hermes.Handler {
 	var (
 		inFlightSem chan struct{}
 		errCnt      = prometheus.NewCounterVec(
@@ -98,16 +104,15 @@ func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) http.Handler {
 		}
 	}
 
-	h := http.HandlerFunc(func(rsp http.ResponseWriter, req *http.Request) {
+	h := hermes.Handler(func(req hermes.Request, res hermes.Response) hermes.Result {
 		if inFlightSem != nil {
 			select {
 			case inFlightSem <- struct{}{}: // All good, carry on.
 				defer func() { <-inFlightSem }()
 			default:
-				http.Error(rsp, fmt.Sprintf(
+				return res.Error(ErrMaxConcurrentRequests, fmt.Sprintf(
 					"Limit of concurrent requests reached (%d), try again later.", opts.MaxRequestsInFlight,
-				), http.StatusServiceUnavailable)
-				return
+				), hermes.StatusServiceUnavailable, errors.Code("max-concurrent-request"), errors.Module("promhermes"))
 			}
 		}
 		mfs, err := reg.Gather()
@@ -122,22 +127,21 @@ func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) http.Handler {
 			case ContinueOnError:
 				if len(mfs) == 0 {
 					// Still report the error if no metrics have been gathered.
-					httpError(rsp, err)
-					return
+					return httpError(req, res, err)
 				}
 			case HTTPErrorOnError:
-				httpError(rsp, err)
-				return
+				return httpError(req, res, err)
 			}
 		}
 
-		contentType := expfmt.Negotiate(req.Header)
-		header := rsp.Header()
-		header.Set(contentTypeHeader, string(contentType))
+		headers := parseHeaders(req)
+		contentType := expfmt.Negotiate(headers)
+		res.Header(contentTypeHeader, string(contentType))
 
-		w := io.Writer(rsp)
-		if !opts.DisableCompression && gzipAccepted(req.Header) {
-			header.Set(contentEncodingHeader, "gzip")
+		buf := bytes.NewBuffer(nil)
+		w := io.Writer(buf)
+		if !opts.DisableCompression && gzipAccepted(req) {
+			res.Header(contentEncodingHeader, "gzip")
 			gz := gzipPool.Get().(*gzip.Writer)
 			defer gzipPool.Put(gz)
 
@@ -163,24 +167,54 @@ func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) http.Handler {
 				case ContinueOnError:
 					// Handled later.
 				case HTTPErrorOnError:
-					httpError(rsp, err)
-					return
+					return httpError(req, res, err)
 				}
 			}
 		}
 
 		if lastErr != nil {
-			httpError(rsp, lastErr)
+			return httpError(req, res, lastErr)
 		}
+
+		return res.Data(buf.Bytes())
 	})
 
 	if opts.Timeout <= 0 {
 		return h
 	}
-	return http.TimeoutHandler(h, opts.Timeout, fmt.Sprintf(
-		"Exceeded configured timeout of %v.\n",
-		opts.Timeout,
-	))
+
+	return hermes.Handler(func(req hermes.Request, res hermes.Response) hermes.Result {
+		var r hermes.Result
+
+		ctx, cancelCtx := context.WithTimeout(req.Context(), opts.Timeout)
+		defer cancelCtx()
+
+		req = req.WithContext(ctx)
+
+		done := make(chan struct{})
+		panicChan := make(chan interface{}, 1)
+		go func() {
+			defer func() {
+				if p := recover(); p != nil {
+					panicChan <- p
+				}
+			}()
+			r = h(req, res)
+			close(done)
+		}()
+
+		select {
+		case p := <-panicChan:
+			panic(p)
+		case <-done:
+			return r
+		case <-ctx.Done():
+			return res.Error(ErrTimeout, fmt.Sprintf(
+				"Exceeded configured timeout of %v.\n",
+				opts.Timeout,
+			), hermes.StatusServiceUnavailable, errors.Code("timeout"), errors.Module("promhermes"))
+		}
+	})
 }
 
 // InstrumentMetricHandler is usually used with an http.Handler returned by the
@@ -199,7 +233,7 @@ func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) http.Handler {
 // code is known). For tracking scrape durations, use the
 // "scrape_duration_seconds" gauge created by the Prometheus server upon each
 // scrape.
-func InstrumentMetricHandler(reg prometheus.Registerer, handler http.Handler) http.Handler {
+func InstrumentMetricHandler(reg prometheus.Registerer, handler hermes.Handler) hermes.Handler {
 	cnt := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "promhermes_metric_handler_requests_total",
@@ -308,9 +342,9 @@ type HandlerOpts struct {
 }
 
 // gzipAccepted returns whether the client will accept gzip-encoded content.
-func gzipAccepted(header http.Header) bool {
-	a := header.Get(acceptEncodingHeader)
-	parts := strings.Split(a, ",")
+func gzipAccepted(req hermes.Request) bool {
+	a := req.Header(acceptEncodingHeader)
+	parts := strings.Split(string(a), ",")
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if part == "gzip" || strings.HasPrefix(part, "gzip;") {
@@ -326,11 +360,14 @@ func gzipAccepted(header http.Header) bool {
 // http.Error, any header settings will be void if the header has already been
 // sent. The error message will still be written to the writer, but it will
 // probably be of limited use.
-func httpError(rsp http.ResponseWriter, err error) {
-	rsp.Header().Del(contentEncodingHeader)
-	http.Error(
-		rsp,
-		"An error has occurred while serving metrics:\n\n"+err.Error(),
-		http.StatusInternalServerError,
+func httpError(req hermes.Request, res hermes.Response, err error) hermes.Result {
+	req.Raw().Response.Header.Del(contentEncodingHeader)
+
+	return res.Error(
+		err,
+		"An error has occurred while serving metrics: "+err.Error(),
+		hermes.StatusInternalServerError,
+		errors.Code("prometheus-failed"),
+		errors.Module("promhermes"),
 	)
 }

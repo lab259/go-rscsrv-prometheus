@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"errors"
 	"log"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/lab259/hermes"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -73,25 +73,25 @@ func TestHandlerErrorHandling(t *testing.T) {
 	logBuf := &bytes.Buffer{}
 	logger := log.New(logBuf, "", 0)
 
-	writer := httptest.NewRecorder()
-	request, _ := http.NewRequest("GET", "/", nil)
-	request.Header.Add("Accept", "test/plain")
-
-	errorHandler := HandlerFor(reg, HandlerOpts{
+	router := hermes.DefaultRouter()
+	router.Get("/http", HandlerFor(reg, HandlerOpts{
 		ErrorLog:      logger,
 		ErrorHandling: HTTPErrorOnError,
 		Registry:      reg,
-	})
-	continueHandler := HandlerFor(reg, HandlerOpts{
+	}))
+	router.Get("/continue", HandlerFor(reg, HandlerOpts{
 		ErrorLog:      logger,
 		ErrorHandling: ContinueOnError,
 		Registry:      reg,
-	})
-	panicHandler := HandlerFor(reg, HandlerOpts{
+	}))
+	router.Get("/panic", HandlerFor(reg, HandlerOpts{
 		ErrorLog:      logger,
 		ErrorHandling: PanicOnError,
 		Registry:      reg,
-	})
+	}))
+
+	handler := router.Handler()
+
 	wantMsg := `error gathering metrics: error collecting metric Desc{fqName: "invalid_metric", help: "not helpful", constLabels: {}, variableLabels: []}: collect error
 `
 	wantErrorBody := `An error has occurred while serving metrics:
@@ -126,28 +126,30 @@ promhermes_metric_handler_errors_total{cause="gathering"} 2
 the_count 0
 `
 
-	errorHandler.ServeHTTP(writer, request)
-	if got, want := writer.Code, http.StatusInternalServerError; got != want {
+	ctx := createRequestCtx("GET", "/http")
+	ctx.Request.Header.Add("Accept", "text/plain")
+	handler(ctx)
+	if got, want := ctx.Response.StatusCode(), hermes.StatusInternalServerError; got != want {
 		t.Errorf("got HTTP status code %d, want %d", got, want)
 	}
 	if got := logBuf.String(); got != wantMsg {
 		t.Errorf("got log message:\n%s\nwant log message:\n%s\n", got, wantMsg)
 	}
-	if got := writer.Body.String(); got != wantErrorBody {
+	if got := string(ctx.Response.Body()); strings.Contains(got, wantMsg) {
 		t.Errorf("got body:\n%s\nwant body:\n%s\n", got, wantErrorBody)
 	}
 	logBuf.Reset()
-	writer.Body.Reset()
-	writer.Code = http.StatusOK
 
-	continueHandler.ServeHTTP(writer, request)
-	if got, want := writer.Code, http.StatusOK; got != want {
+	ctx = createRequestCtx("GET", "/continue")
+	ctx.Request.Header.Add("Accept", "text/plain")
+	handler(ctx)
+	if got, want := ctx.Response.StatusCode(), hermes.StatusOK; got != want {
 		t.Errorf("got HTTP status code %d, want %d", got, want)
 	}
 	if got := logBuf.String(); got != wantMsg {
 		t.Errorf("got log message %q, want %q", got, wantMsg)
 	}
-	if got := writer.Body.String(); got != wantOKBody1 && got != wantOKBody2 {
+	if got := string(ctx.Response.Body()); got != wantOKBody1 && got != wantOKBody2 {
 		t.Errorf("got body %q, want either %q or %q", got, wantOKBody1, wantOKBody2)
 	}
 
@@ -156,103 +158,122 @@ the_count 0
 			t.Error("expected panic from panicHandler")
 		}
 	}()
-	panicHandler.ServeHTTP(writer, request)
+
+	ctx = createRequestCtx("GET", "/panic")
+	ctx.Request.Header.Add("Accept", "text/plain")
+	handler(ctx)
 }
 
 func TestInstrumentMetricHandler(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	handler := InstrumentMetricHandler(reg, HandlerFor(reg, HandlerOpts{}))
+	h := InstrumentMetricHandler(reg, HandlerFor(reg, HandlerOpts{}))
 	// Do it again to test idempotency.
 	InstrumentMetricHandler(reg, HandlerFor(reg, HandlerOpts{}))
-	writer := httptest.NewRecorder()
-	request, _ := http.NewRequest("GET", "/", nil)
-	request.Header.Add("Accept", "test/plain")
 
-	handler.ServeHTTP(writer, request)
-	if got, want := writer.Code, http.StatusOK; got != want {
+	router := hermes.DefaultRouter()
+	router.Get("/", h)
+
+	handler := router.Handler()
+
+	reqCtx1 := createRequestCtx("GET", "/")
+	reqCtx1.Request.Header.Add("Accept", "test/plain")
+
+	handler(reqCtx1)
+	if got, want := reqCtx1.Response.StatusCode(), hermes.StatusOK; got != want {
 		t.Errorf("got HTTP status code %d, want %d", got, want)
 	}
 
 	want := "promhermes_metric_handler_requests_in_flight 1\n"
-	if got := writer.Body.String(); !strings.Contains(got, want) {
+	if got := string(reqCtx1.Response.Body()); !strings.Contains(got, want) {
 		t.Errorf("got body %q, does not contain %q", got, want)
 	}
 	want = "promhermes_metric_handler_requests_total{code=\"200\"} 0\n"
-	if got := writer.Body.String(); !strings.Contains(got, want) {
+	if got := string(reqCtx1.Response.Body()); !strings.Contains(got, want) {
 		t.Errorf("got body %q, does not contain %q", got, want)
 	}
 
-	writer.Body.Reset()
-	handler.ServeHTTP(writer, request)
-	if got, want := writer.Code, http.StatusOK; got != want {
+	reqCtx2 := createRequestCtx("GET", "/")
+	reqCtx2.Request.Header.Add("Accept", "test/plain")
+
+	handler(reqCtx2)
+	if got, want := reqCtx2.Response.StatusCode(), hermes.StatusOK; got != want {
 		t.Errorf("got HTTP status code %d, want %d", got, want)
 	}
 
 	want = "promhermes_metric_handler_requests_in_flight 1\n"
-	if got := writer.Body.String(); !strings.Contains(got, want) {
+	if got := string(reqCtx2.Response.Body()); !strings.Contains(got, want) {
 		t.Errorf("got body %q, does not contain %q", got, want)
 	}
 	want = "promhermes_metric_handler_requests_total{code=\"200\"} 1\n"
-	if got := writer.Body.String(); !strings.Contains(got, want) {
+	if got := string(reqCtx2.Response.Body()); !strings.Contains(got, want) {
 		t.Errorf("got body %q, does not contain %q", got, want)
 	}
 }
 
 func TestHandlerMaxRequestsInFlight(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	handler := HandlerFor(reg, HandlerOpts{MaxRequestsInFlight: 1})
-	w1 := httptest.NewRecorder()
-	w2 := httptest.NewRecorder()
-	w3 := httptest.NewRecorder()
-	request, _ := http.NewRequest("GET", "/", nil)
-	request.Header.Add("Accept", "test/plain")
+
+	router := hermes.DefaultRouter()
+	router.Get("/", HandlerFor(reg, HandlerOpts{MaxRequestsInFlight: 1}))
+
+	handler := router.Handler()
+
+	reqCtx1 := createRequestCtx("GET", "/")
+	reqCtx1.Request.Header.Add("Accept", "test/plain")
+
+	reqCtx2 := createRequestCtx("GET", "/")
+	reqCtx2.Request.Header.Add("Accept", "test/plain")
+
+	reqCtx3 := createRequestCtx("GET", "/")
+	reqCtx3.Request.Header.Add("Accept", "test/plain")
 
 	c := blockingCollector{Block: make(chan struct{}), CollectStarted: make(chan struct{}, 1)}
 	reg.MustRegister(c)
 
 	rq1Done := make(chan struct{})
 	go func() {
-		handler.ServeHTTP(w1, request)
+		handler(reqCtx1)
 		close(rq1Done)
 	}()
 	<-c.CollectStarted
 
-	handler.ServeHTTP(w2, request)
+	handler(reqCtx2)
 
-	if got, want := w2.Code, http.StatusServiceUnavailable; got != want {
+	if got, want := reqCtx2.Response.StatusCode(), hermes.StatusServiceUnavailable; got != want {
 		t.Errorf("got HTTP status code %d, want %d", got, want)
 	}
-	if got, want := w2.Body.String(), "Limit of concurrent requests reached (1), try again later.\n"; got != want {
+	if got, want := string(reqCtx2.Response.Body()), "Limit of concurrent requests reached (1), try again later.\n"; strings.Contains(got, want) {
 		t.Errorf("got body %q, want %q", got, want)
 	}
 
 	close(c.Block)
 	<-rq1Done
 
-	handler.ServeHTTP(w3, request)
+	handler(reqCtx3)
 
-	if got, want := w3.Code, http.StatusOK; got != want {
+	if got, want := reqCtx3.Response.StatusCode(), hermes.StatusOK; got != want {
 		t.Errorf("got HTTP status code %d, want %d", got, want)
 	}
 }
 
 func TestHandlerTimeout(t *testing.T) {
+
 	reg := prometheus.NewRegistry()
 	handler := HandlerFor(reg, HandlerOpts{Timeout: time.Millisecond})
-	w := httptest.NewRecorder()
-
-	request, _ := http.NewRequest("GET", "/", nil)
-	request.Header.Add("Accept", "test/plain")
 
 	c := blockingCollector{Block: make(chan struct{}), CollectStarted: make(chan struct{}, 1)}
 	reg.MustRegister(c)
 
-	handler.ServeHTTP(w, request)
+	router := hermes.DefaultRouter()
+	router.Get("/", handler)
 
-	if got, want := w.Code, http.StatusServiceUnavailable; got != want {
+	ctx := createRequestCtx("GET", "/")
+	router.Handler()(ctx)
+
+	if got, want := ctx.Response.StatusCode(), hermes.StatusServiceUnavailable; got != want {
 		t.Errorf("got HTTP status code %d, want %d", got, want)
 	}
-	if got, want := w.Body.String(), "Exceeded configured timeout of 1ms.\n"; got != want {
+	if got, want := string(ctx.Response.Body()), "Exceeded configured timeout of 1ms.\n"; strings.Contains(got, want) {
 		t.Errorf("got body %q, want %q", got, want)
 	}
 

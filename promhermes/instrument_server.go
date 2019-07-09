@@ -2,11 +2,11 @@ package promhermes
 
 import (
 	"errors"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/lab259/hermes"
 	dto "github.com/prometheus/client_model/go"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -20,11 +20,11 @@ const magicString = "zZgWfBxLqvG8kc8IMv3POi2Bb0tZI3vAnBx+gBaFi9FyPzB/CzKUer1yufD
 // requests currently handled by the wrapped http.Handler.
 //
 // See the example for InstrumentHandlerDuration for example usage.
-func InstrumentHandlerInFlight(g prometheus.Gauge, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func InstrumentHandlerInFlight(g prometheus.Gauge, next hermes.Handler) hermes.Handler {
+	return hermes.Handler(func(req hermes.Request, res hermes.Response) hermes.Result {
 		g.Inc()
 		defer g.Dec()
-		next.ServeHTTP(w, r)
+		return next(req, res)
 	})
 }
 
@@ -45,23 +45,23 @@ func InstrumentHandlerInFlight(g prometheus.Gauge, next http.Handler) http.Handl
 //
 // Note that this method is only guaranteed to never observe negative durations
 // if used with Go1.9+.
-func InstrumentHandlerDuration(obs prometheus.ObserverVec, next http.Handler) http.HandlerFunc {
+func InstrumentHandlerDuration(obs prometheus.ObserverVec, next hermes.Handler) hermes.Handler {
 	code, method := checkLabels(obs)
 
 	if code {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		return hermes.Handler(func(req hermes.Request, res hermes.Response) hermes.Result {
 			now := time.Now()
-			d := newDelegator(w, nil)
-			next.ServeHTTP(d, r)
-
-			obs.With(labels(code, method, r.Method, d.Status())).Observe(time.Since(now).Seconds())
+			r := next(req, res)
+			obs.With(labels(code, method, string(req.Method()), req.Raw().Response.StatusCode())).Observe(time.Since(now).Seconds())
+			return r
 		})
 	}
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return hermes.Handler(func(req hermes.Request, res hermes.Response) hermes.Result {
 		now := time.Now()
-		next.ServeHTTP(w, r)
-		obs.With(labels(code, method, r.Method, 0)).Observe(time.Since(now).Seconds())
+		r := next(req, res)
+		obs.With(labels(code, method, string(req.Method()), 0)).Observe(time.Since(now).Seconds())
+		return r
 	})
 }
 
@@ -78,20 +78,21 @@ func InstrumentHandlerDuration(obs prometheus.ObserverVec, next http.Handler) ht
 // If the wrapped Handler panics, the Counter is not incremented.
 //
 // See the example for InstrumentHandlerDuration for example usage.
-func InstrumentHandlerCounter(counter *prometheus.CounterVec, next http.Handler) http.HandlerFunc {
+func InstrumentHandlerCounter(counter *prometheus.CounterVec, next hermes.Handler) hermes.Handler {
 	code, method := checkLabels(counter)
 
 	if code {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			d := newDelegator(w, nil)
-			next.ServeHTTP(d, r)
-			counter.With(labels(code, method, r.Method, d.Status())).Inc()
+		return hermes.Handler(func(req hermes.Request, res hermes.Response) hermes.Result {
+			r := next(req, res)
+			counter.With(labels(code, method, string(req.Method()), req.Raw().Response.StatusCode())).Inc()
+			return r
 		})
 	}
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, r)
-		counter.With(labels(code, method, r.Method, 0)).Inc()
+	return hermes.Handler(func(req hermes.Request, res hermes.Response) hermes.Result {
+		r := next(req, res)
+		counter.With(labels(code, method, string(req.Method()), 0)).Inc()
+		return r
 	})
 }
 
@@ -113,17 +114,18 @@ func InstrumentHandlerCounter(counter *prometheus.CounterVec, next http.Handler)
 // if used with Go1.9+.
 //
 // See the example for InstrumentHandlerDuration for example usage.
-func InstrumentHandlerTimeToWriteHeader(obs prometheus.ObserverVec, next http.Handler) http.HandlerFunc {
-	code, method := checkLabels(obs)
+// TODO: try to implement this one using hermes/fasthttp
+// func InstrumentHandlerTimeToWriteHeader(obs prometheus.ObserverVec, next hermes.Handler) hermes.Handler {
+// 	code, method := checkLabels(obs)
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		now := time.Now()
-		d := newDelegator(w, func(status int) {
-			obs.With(labels(code, method, r.Method, status)).Observe(time.Since(now).Seconds())
-		})
-		next.ServeHTTP(d, r)
-	})
-}
+// 	return hermes.Handler(func(req hermes.Request, res hermes.Response) hermes.Result {
+// 		now := time.Now()
+// 		d := newDelegator(w, func(status int) {
+// 			obs.With(labels(code, method, r.Method, status)).Observe(time.Since(now).Seconds())
+// 		})
+// 		next.ServeHTTP(d, r)
+// 	})
+// }
 
 // InstrumentHandlerRequestSize is a middleware that wraps the provided
 // http.Handler to observe the request size with the provided ObserverVec.  The
@@ -141,22 +143,23 @@ func InstrumentHandlerTimeToWriteHeader(obs prometheus.ObserverVec, next http.Ha
 // If the wrapped Handler panics, no values are reported.
 //
 // See the example for InstrumentHandlerDuration for example usage.
-func InstrumentHandlerRequestSize(obs prometheus.ObserverVec, next http.Handler) http.HandlerFunc {
+func InstrumentHandlerRequestSize(obs prometheus.ObserverVec, next hermes.Handler) hermes.Handler {
 	code, method := checkLabels(obs)
 
 	if code {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			d := newDelegator(w, nil)
-			next.ServeHTTP(d, r)
-			size := computeApproximateRequestSize(r)
-			obs.With(labels(code, method, r.Method, d.Status())).Observe(float64(size))
+		return hermes.Handler(func(req hermes.Request, res hermes.Response) hermes.Result {
+			r := next(req, res)
+			size := computeApproximateRequestSize(req)
+			obs.With(labels(code, method, string(req.Method()), req.Raw().Response.StatusCode())).Observe(float64(size))
+			return r
 		})
 	}
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, r)
-		size := computeApproximateRequestSize(r)
-		obs.With(labels(code, method, r.Method, 0)).Observe(float64(size))
+	return hermes.Handler(func(req hermes.Request, res hermes.Response) hermes.Result {
+		r := next(req, res)
+		size := computeApproximateRequestSize(req)
+		obs.With(labels(code, method, string(req.Method()), 0)).Observe(float64(size))
+		return r
 	})
 }
 
@@ -176,13 +179,27 @@ func InstrumentHandlerRequestSize(obs prometheus.ObserverVec, next http.Handler)
 // If the wrapped Handler panics, no values are reported.
 //
 // See the example for InstrumentHandlerDuration for example usage.
-func InstrumentHandlerResponseSize(obs prometheus.ObserverVec, next http.Handler) http.Handler {
+func InstrumentHandlerResponseSize(obs prometheus.ObserverVec, next hermes.Handler) hermes.Handler {
 	code, method := checkLabels(obs)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		d := newDelegator(w, nil)
-		next.ServeHTTP(d, r)
-		obs.With(labels(code, method, r.Method, d.Status())).Observe(float64(d.Written()))
+	return hermes.Handler(func(req hermes.Request, res hermes.Response) hermes.Result {
+		r := next(req, res)
+		obs.With(labels(code, method, string(req.Method()), req.Raw().Response.StatusCode())).Observe(float64(len(req.Raw().Response.Body())))
+		return r
 	})
+}
+
+func parseHeaders(req hermes.Request) map[string][]string {
+	header := make(map[string][]string)
+	req.Raw().Request.Header.VisitAll(func(k, v []byte) {
+		sk, sv := string(k), string(v)
+		if headerValue, ok := header[sk]; ok {
+			header[sk] = append(headerValue, sv)
+		} else {
+			header[sk] = []string{sv}
+		}
+	})
+	return header
+
 }
 
 func checkLabels(c prometheus.Collector) (code bool, method bool) {
@@ -282,27 +299,24 @@ func labels(code, method bool, reqMethod string, status int) prometheus.Labels {
 	return labels
 }
 
-func computeApproximateRequestSize(r *http.Request) int {
+func computeApproximateRequestSize(req hermes.Request) int {
+	ctx := req.Raw()
+
 	s := 0
-	if r.URL != nil {
-		s += len(r.URL.String())
+	if ctx.URI() != nil {
+		s += len(ctx.URI().String())
 	}
 
-	s += len(r.Method)
-	s += len(r.Proto)
-	for name, values := range r.Header {
+	s += len(ctx.Method())
+	header := parseHeaders(req)
+	for name, values := range header {
 		s += len(name)
 		for _, value := range values {
 			s += len(value)
 		}
 	}
-	s += len(r.Host)
 
-	// N.B. r.Form and r.MultipartForm are assumed to be included in r.URL.
-
-	if r.ContentLength != -1 {
-		s += int(r.ContentLength)
-	}
+	s += int(len(ctx.Request.Body()))
 	return s
 }
 
