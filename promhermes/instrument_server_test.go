@@ -305,7 +305,7 @@ func ExampleInstrumentHandlerDuration() {
 	)
 
 	router := hermes.DefaultRouter()
-	router.Get("/metrics", Handler())
+	router.Get("/metrics", DefaultHandler())
 	router.Get("/push", pushChain)
 	router.Get("/pull", pullChain)
 

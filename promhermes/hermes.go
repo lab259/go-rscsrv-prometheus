@@ -25,9 +25,8 @@ import (
 
 	"github.com/lab259/errors/v2"
 	"github.com/lab259/hermes"
-	"github.com/prometheus/common/expfmt"
-
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/expfmt"
 )
 
 const (
@@ -42,10 +41,11 @@ var gzipPool = sync.Pool{
 	},
 }
 
-var ErrMaxConcurrentRequests = errors.New("limit of concurrent requests reached")
-var ErrTimeout = errors.New("configured timeout exceeded")
+var errMaxConcurrentRequests = errors.New("limit of concurrent requests reached")
+var errGzipFailedToClose = errors.New("unable to close gzip.Writer")
+var errTimeout = errors.New("configured timeout exceeded")
 
-// Handler returns an hermes.Handler for the prometheus.DefaultGatherer, using
+// DefaultHandler returns an hermes.Handler for the prometheus.DefaultGatherer, using
 // default HandlerOpts, i.e. it reports the first error as an HTTP error, it has
 // no error logging, and it applies compression if requested by the client.
 //
@@ -59,9 +59,32 @@ var ErrTimeout = errors.New("configured timeout exceeded")
 // anything that requires more customization (including using a non-default
 // Gatherer, different instrumentation, and non-default HandlerOpts), use the
 // HandlerFor function. See there for details.
-func Handler() hermes.Handler {
+func DefaultHandler() hermes.Handler {
 	return InstrumentMetricHandler(
 		prometheus.DefaultRegisterer, HandlerFor(prometheus.DefaultGatherer, HandlerOpts{}),
+	)
+}
+
+// Handler returns an hermes.Handler for the promsrv.Service, using
+// default HandlerOpts, i.e. it reports the first error as an HTTP error, it has
+// no error logging, and it applies compression if requested by the client.
+//
+// The returned hermes.Handler is already instrumented using the
+// InstrumentMetricHandler function and the prometheus.DefaultRegisterer. If you
+// create multiple hermes.Handlers by separate calls of the Handler function, the
+// metrics used for instrumentation will be shared between them, providing
+// global scrape counts.
+//
+// This function is meant to cover the bulk of basic use cases. If you are doing
+// anything that requires more customization (including using a non-default
+// Gatherer, different instrumentation, and non-default HandlerOpts), use the
+// HandlerFor function. See there for details.
+func Handler(srv interface {
+	prometheus.Gatherer
+	prometheus.Registerer
+}) hermes.Handler {
+	return InstrumentMetricHandler(
+		srv, HandlerFor(srv, HandlerOpts{}),
 	)
 }
 
@@ -105,7 +128,7 @@ func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) hermes.Handler {
 			case inFlightSem <- struct{}{}: // All good, carry on.
 				defer func() { <-inFlightSem }()
 			default:
-				return res.Error(ErrMaxConcurrentRequests, fmt.Sprintf(
+				return res.Error(errMaxConcurrentRequests, fmt.Sprintf(
 					"Limit of concurrent requests reached (%d), try again later.", opts.MaxRequestsInFlight,
 				), hermes.StatusServiceUnavailable, errors.Code("max-concurrent-request"), errors.Module("promhermes"))
 			}
@@ -134,16 +157,17 @@ func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) hermes.Handler {
 		res.Header(contentTypeHeader, string(contentType))
 
 		buf := bytes.NewBuffer(nil)
-		w := io.Writer(buf)
+		var w io.Writer
+
 		if !opts.DisableCompression && gzipAccepted(req) {
 			res.Header(contentEncodingHeader, "gzip")
 			gz := gzipPool.Get().(*gzip.Writer)
 			defer gzipPool.Put(gz)
 
-			gz.Reset(w)
-			defer gz.Close()
-
+			gz.Reset(buf)
 			w = gz
+		} else {
+			w = buf
 		}
 
 		enc := expfmt.NewEncoder(w, contentType)
@@ -169,6 +193,12 @@ func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) hermes.Handler {
 
 		if lastErr != nil {
 			return httpError(req, res, lastErr)
+		}
+
+		if closer, ok := w.(io.Closer); ok {
+			if err := closer.Close(); err != nil {
+				return httpError(req, res, errGzipFailedToClose)
+			}
 		}
 
 		return res.Data(buf.Bytes())
@@ -204,7 +234,7 @@ func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) hermes.Handler {
 		case <-done:
 			return r
 		case <-ctx.Done():
-			return res.Error(ErrTimeout, fmt.Sprintf(
+			return res.Error(errTimeout, fmt.Sprintf(
 				"Exceeded configured timeout of %v.",
 				opts.Timeout,
 			), hermes.StatusServiceUnavailable, errors.Code("timeout"), errors.Module("promhermes"))

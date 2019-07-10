@@ -47,7 +47,7 @@ func (service *Service) Register(c prometheus.Collector) error {
 
 // MustRegister implements prometheus.Registerer.
 func (service *Service) MustRegister(cs ...prometheus.Collector) {
-	service.MustRegister(cs...)
+	service.registry().MustRegister(cs...)
 }
 
 // Unregister implements prometheus.Registerer.
