@@ -1,15 +1,13 @@
-package promhermes
+package promfasthttp
 
 import (
 	"fmt"
 	"log"
 
-	"github.com/valyala/fasthttp"
-
-	"github.com/lab259/hermes"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/valyala/fasthttp"
 )
 
 func createRequestCtx(method, path string) *fasthttp.RequestCtx {
@@ -214,8 +212,8 @@ var _ = Describe("Instrument Server", func() {
 			[]string{},
 		)
 
-		handler := hermes.Handler(func(req hermes.Request, res hermes.Response) hermes.Result {
-			return res.Data([]byte("OK"))
+		handler := fasthttp.RequestHandler(func(ctx *fasthttp.RequestCtx) {
+			ctx.WriteString("OK")
 		})
 
 		reg.MustRegister(inFlightGauge, counter, histVec, responseSize, writeHeaderVec)
@@ -230,11 +228,8 @@ var _ = Describe("Instrument Server", func() {
 			),
 		)
 
-		router := hermes.DefaultRouter()
-		router.Get("/", chain)
-
 		ctx := createRequestCtx("GET", "/")
-		router.Handler()(ctx)
+		chain(ctx)
 	})
 })
 
@@ -275,11 +270,11 @@ func ExampleInstrumentHandlerDuration() {
 	)
 
 	// Create the handlers that will be wrapped by the middleware.
-	pushHandler := hermes.Handler(func(req hermes.Request, res hermes.Response) hermes.Result {
-		return res.Data([]byte("Push"))
+	pushHandler := fasthttp.RequestHandler(func(ctx *fasthttp.RequestCtx) {
+		ctx.WriteString("Push")
 	})
-	pullHandler := hermes.Handler(func(req hermes.Request, res hermes.Response) hermes.Result {
-		return res.Data([]byte("Pull"))
+	pullHandler := fasthttp.RequestHandler(func(ctx *fasthttp.RequestCtx) {
+		ctx.WriteString("Pull")
 	})
 
 	// Register all of the metrics in the standard registry.
@@ -302,18 +297,20 @@ func ExampleInstrumentHandlerDuration() {
 		),
 	)
 
-	router := hermes.DefaultRouter()
-	router.Get("/metrics", DefaultHandler())
-	router.Get("/push", pushChain)
-	router.Get("/pull", pullChain)
+	metricsHandler := DefaultHandler()
 
-	app := hermes.NewApplication(hermes.ApplicationConfig{
-		HTTP: hermes.FasthttpServiceConfiguration{
-			Bind: ":3000",
-		},
-	}, router)
+	h := fasthttp.RequestHandler(func(ctx *fasthttp.RequestCtx) {
+		switch string(ctx.Request.URI().Path()) {
+		case "/metrics":
+			metricsHandler(ctx)
+		case "/push":
+			pushChain(ctx)
+		case "/pull":
+			pullChain(ctx)
+		}
+	})
 
-	if err := app.Start(); err != nil {
+	if err := fasthttp.ListenAndServe(":3000", h); err != nil {
 		log.Fatal(err)
 	}
 }

@@ -1,16 +1,21 @@
-package promhermes
+package promfasthttp
 
 import (
 	"bytes"
-	"encoding/json"
+	"context"
 	"errors"
+	"fmt"
+	"io/ioutil"
 	"log"
+	"net"
+	"net/http"
 	"time"
 
-	"github.com/lab259/hermes"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/valyala/fasthttp"
+	"github.com/valyala/fasthttp/fasthttputil"
 )
 
 type errorCollector struct{}
@@ -73,51 +78,50 @@ var _ = Describe("Handler", func() {
 		logBuf := &bytes.Buffer{}
 		logger := log.New(logBuf, "", 0)
 
-		router := hermes.DefaultRouter()
-		router.Get("/http", HandlerFor(reg, HandlerOpts{
+		errorHandler := HandlerFor(reg, HandlerOpts{
 			ErrorLog:      logger,
 			ErrorHandling: HTTPErrorOnError,
 			Registry:      reg,
-		}))
-		router.Get("/continue", HandlerFor(reg, HandlerOpts{
+		})
+		continueHandler := HandlerFor(reg, HandlerOpts{
 			ErrorLog:      logger,
 			ErrorHandling: ContinueOnError,
 			Registry:      reg,
-		}))
-		router.Get("/panic", HandlerFor(reg, HandlerOpts{
+		})
+		panicHandler := HandlerFor(reg, HandlerOpts{
 			ErrorLog:      logger,
 			ErrorHandling: PanicOnError,
 			Registry:      reg,
-		}))
-
-		handler := router.Handler()
+		})
 
 		wantMsg := `error gathering metrics: error collecting metric Desc{fqName: "invalid_metric", help: "not helpful", constLabels: {}, variableLabels: []}: collect error
 `
-		wantErrorBody := `An error has occurred while serving metrics: error collecting metric Desc{fqName: "invalid_metric", help: "not helpful", constLabels: {}, variableLabels: []}: collect error`
+		wantErrorBody := `An error has occurred while serving metrics:
+
+error collecting metric Desc{fqName: "invalid_metric", help: "not helpful", constLabels: {}, variableLabels: []}: collect error`
 		wantOKBody1 := `# HELP name docstring
 # TYPE name counter
 name{constname="constvalue",labelname="val1"} 1
 name{constname="constvalue",labelname="val2"} 1
-# HELP promhermes_metric_handler_errors_total Total number of internal errors encountered by the promhermes metric handler.
-# TYPE promhermes_metric_handler_errors_total counter
-promhermes_metric_handler_errors_total{cause="encoding"} 0
-promhermes_metric_handler_errors_total{cause="gathering"} 1
+# HELP promfasthttp_metric_handler_errors_total Total number of internal errors encountered by the promfasthttp metric handler.
+# TYPE promfasthttp_metric_handler_errors_total counter
+promfasthttp_metric_handler_errors_total{cause="encoding"} 0
+promfasthttp_metric_handler_errors_total{cause="gathering"} 1
 # HELP the_count Ah-ah-ah! Thunder and lightning!
 # TYPE the_count counter
 the_count 0
 `
 		// It might happen that counting the gathering error makes it to the
-		// promhermes_metric_handler_errors_total counter before it is gathered
+		// promfasthttp_metric_handler_errors_total counter before it is gathered
 		// itself. Thus, we have to bodies that are acceptable for the test.
 		wantOKBody2 := `# HELP name docstring
 # TYPE name counter
 name{constname="constvalue",labelname="val1"} 1
 name{constname="constvalue",labelname="val2"} 1
-# HELP promhermes_metric_handler_errors_total Total number of internal errors encountered by the promhermes metric handler.
-# TYPE promhermes_metric_handler_errors_total counter
-promhermes_metric_handler_errors_total{cause="encoding"} 0
-promhermes_metric_handler_errors_total{cause="gathering"} 2
+# HELP promfasthttp_metric_handler_errors_total Total number of internal errors encountered by the promfasthttp metric handler.
+# TYPE promfasthttp_metric_handler_errors_total counter
+promfasthttp_metric_handler_errors_total{cause="encoding"} 0
+promfasthttp_metric_handler_errors_total{cause="gathering"} 2
 # HELP the_count Ah-ah-ah! Thunder and lightning!
 # TYPE the_count counter
 the_count 0
@@ -127,25 +131,22 @@ the_count 0
 			logBuf.Reset()
 			ctx := createRequestCtx("GET", "/http")
 			ctx.Request.Header.Add("Accept", "text/plain")
-			handler(ctx)
-			got, want := ctx.Response.StatusCode(), hermes.StatusInternalServerError
+			errorHandler(ctx)
+
+			got, want := ctx.Response.StatusCode(), fasthttp.StatusInternalServerError
 			Expect(got).To(Equal(want))
 
 			Expect(logBuf.String()).To(Equal(wantMsg))
-			var httperr map[string]interface{}
-			Expect(json.Unmarshal(ctx.Response.Body(), &httperr)).To(Succeed())
-			Expect(httperr).To(HaveKeyWithValue("message", wantErrorBody))
-			Expect(httperr).To(HaveKeyWithValue("module", "promhermes"))
-			Expect(httperr).To(HaveKeyWithValue("code", "prometheus-failed"))
-
+			Expect(string(ctx.Response.Body())).To(Equal(wantErrorBody))
 		})
 
 		It("should continue on error", func() {
 			logBuf.Reset()
 			ctx := createRequestCtx("GET", "/continue")
 			ctx.Request.Header.Add("Accept", "text/plain")
-			handler(ctx)
-			Expect(ctx.Response.StatusCode()).To(Equal(hermes.StatusOK))
+			continueHandler(ctx)
+
+			Expect(ctx.Response.StatusCode()).To(Equal(fasthttp.StatusOK))
 			Expect(logBuf.String()).To(Equal(wantMsg))
 			Expect(string(ctx.Response.Body())).To(Or(Equal(wantOKBody1), Equal(wantOKBody2)))
 		})
@@ -160,7 +161,7 @@ the_count 0
 
 			ctx := createRequestCtx("GET", "/panic")
 			ctx.Request.Header.Add("Accept", "text/plain")
-			handler(ctx)
+			panicHandler(ctx)
 		})
 	})
 
@@ -171,32 +172,27 @@ the_count 0
 			// Do it again to test idempotency.
 			InstrumentMetricHandler(reg, HandlerFor(reg, HandlerOpts{}))
 
-			router := hermes.DefaultRouter()
-			router.Get("/", h)
-
-			handler := router.Handler()
-
 			reqCtx1 := createRequestCtx("GET", "/")
 			reqCtx1.Request.Header.Add("Accept", "test/plain")
 
-			handler(reqCtx1)
-			Expect(reqCtx1.Response.StatusCode()).To(Equal(hermes.StatusOK))
+			h(reqCtx1)
+			Expect(reqCtx1.Response.StatusCode()).To(Equal(fasthttp.StatusOK))
 
-			want := "promhermes_metric_handler_requests_in_flight 1\n"
+			want := "promfasthttp_metric_handler_requests_in_flight 1\n"
 			Expect(string(reqCtx1.Response.Body())).To(ContainSubstring(want))
-			want = "promhermes_metric_handler_requests_total{code=\"200\"} 0\n"
+			want = "promfasthttp_metric_handler_requests_total{code=\"200\"} 0\n"
 			Expect(string(reqCtx1.Response.Body())).To(ContainSubstring(want))
 
 			reqCtx2 := createRequestCtx("GET", "/")
 			reqCtx2.Request.Header.Add("Accept", "test/plain")
 
-			handler(reqCtx2)
-			Expect(reqCtx2.Response.StatusCode()).To(Equal(hermes.StatusOK))
+			h(reqCtx2)
+			Expect(reqCtx2.Response.StatusCode()).To(Equal(fasthttp.StatusOK))
 
-			want = "promhermes_metric_handler_requests_in_flight 1\n"
+			want = "promfasthttp_metric_handler_requests_in_flight 1\n"
 			Expect(string(reqCtx2.Response.Body())).To(ContainSubstring(want))
 
-			want = "promhermes_metric_handler_requests_total{code=\"200\"} 1\n"
+			want = "promfasthttp_metric_handler_requests_total{code=\"200\"} 1\n"
 			Expect(string(reqCtx2.Response.Body())).To(ContainSubstring(want))
 		})
 	})
@@ -205,10 +201,7 @@ the_count 0
 		It("should fail when exceeded", func() {
 			reg := prometheus.NewRegistry()
 
-			router := hermes.DefaultRouter()
-			router.Get("/", HandlerFor(reg, HandlerOpts{MaxRequestsInFlight: 1}))
-
-			handler := router.Handler()
+			handler := HandlerFor(reg, HandlerOpts{MaxRequestsInFlight: 1})
 
 			reqCtx1 := createRequestCtx("GET", "/")
 			reqCtx1.Request.Header.Add("Accept", "test/plain")
@@ -231,14 +224,14 @@ the_count 0
 
 			handler(reqCtx2)
 
-			Expect(reqCtx2.Response.StatusCode()).To(Equal(hermes.StatusServiceUnavailable))
+			Expect(reqCtx2.Response.StatusCode()).To(Equal(fasthttp.StatusServiceUnavailable))
 			Expect(string(reqCtx2.Response.Body())).To(ContainSubstring("Limit of concurrent requests reached (1), try again later."))
 
 			close(c.Block)
 			<-rq1Done
 
 			handler(reqCtx3)
-			Expect(reqCtx3.Response.StatusCode()).To(Equal(hermes.StatusOK))
+			Expect(reqCtx3.Response.StatusCode()).To(Equal(fasthttp.StatusOK))
 		})
 	})
 
@@ -250,15 +243,40 @@ the_count 0
 			c := blockingCollector{Block: make(chan struct{}), CollectStarted: make(chan struct{}, 1)}
 			reg.MustRegister(c)
 
-			router := hermes.DefaultRouter()
-			router.Get("/", handler)
+			r, err := http.NewRequest("GET", "http://test/", nil)
+			Expect(err).ToNot(HaveOccurred())
 
-			ctx := createRequestCtx("GET", "/")
-			router.Handler()(ctx)
+			res, err := serve(handler, r)
+			Expect(err).ToNot(HaveOccurred())
 
-			Expect(ctx.Response.StatusCode()).To(Equal(hermes.StatusRequestTimeout))
-			Expect(string(ctx.Response.Body())).To(ContainSubstring("Exceeded configured timeout of 1ms."))
+			body, err := ioutil.ReadAll(res.Body)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(res.StatusCode).To(Equal(fasthttp.StatusRequestTimeout))
+			Expect(string(body)).To(ContainSubstring("Exceeded configured timeout of 1ms."))
 			close(c.Block) // To not leak a goroutine.
 		})
 	})
 })
+
+func serve(handler fasthttp.RequestHandler, req *http.Request) (*http.Response, error) {
+	ln := fasthttputil.NewInmemoryListener()
+	defer ln.Close()
+
+	go func() {
+		err := fasthttp.Serve(ln, handler)
+		if err != nil {
+			panic(fmt.Errorf("failed to serve: %v", err))
+		}
+	}()
+
+	client := http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return ln.Dial()
+			},
+		},
+	}
+
+	return client.Do(req)
+}

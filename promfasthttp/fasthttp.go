@@ -1,32 +1,31 @@
-// Package promhermes provides tooling around HTTP servers.
+// Package promfasthttp provides tooling around HTTP servers.
 //
-// First, the package allows the creation of hermes.Handler instances to expose
-// Prometheus metrics via HTTP. promhermes.Handler acts on the
+// First, the package allows the creation of fasthttp.RequestHandler instances to expose
+// Prometheus metrics via HTTP. promfasthttp.Handler acts on the
 // prometheus.DefaultGatherer. With HandlerFor, you can create a handler for a
 // custom registry or anything that implements the Gatherer interface. It also
 // allows the creation of handlers that act differently on errors or allow to
 // log errors.
 //
-// Second, the package provides tooling to instrument instances of hermes.Handler
+// Second, the package provides tooling to instrument instances of fasthttp.Handler
 // via middleware. Middleware wrappers follow the naming scheme
 // InstrumentHandlerX, where X describes the intended use of the middleware.
 // See each function's doc comment for specific details.
-package promhermes
+package promfasthttp
 
 import (
-	"bytes"
 	"compress/gzip"
-	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/lab259/errors/v2"
-	"github.com/lab259/hermes"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
+	"github.com/valyala/fasthttp"
 )
 
 const (
@@ -45,13 +44,13 @@ var errMaxConcurrentRequests = errors.New("limit of concurrent requests reached"
 var errGzipFailedToClose = errors.New("unable to close gzip.Writer")
 var errTimeout = errors.New("configured timeout exceeded")
 
-// DefaultHandler returns an hermes.Handler for the prometheus.DefaultGatherer, using
+// DefaultHandler returns an fasthttp.RequestHandler for the prometheus.DefaultGatherer, using
 // default HandlerOpts, i.e. it reports the first error as an HTTP error, it has
 // no error logging, and it applies compression if requested by the client.
 //
-// The returned hermes.Handler is already instrumented using the
+// The returned fasthttp.RequestHandler is already instrumented using the
 // InstrumentMetricHandler function and the prometheus.DefaultRegisterer. If you
-// create multiple hermes.Handlers by separate calls of the Handler function, the
+// create multiple fasthttp.RequestHandlers by separate calls of the Handler function, the
 // metrics used for instrumentation will be shared between them, providing
 // global scrape counts.
 //
@@ -59,19 +58,19 @@ var errTimeout = errors.New("configured timeout exceeded")
 // anything that requires more customization (including using a non-default
 // Gatherer, different instrumentation, and non-default HandlerOpts), use the
 // HandlerFor function. See there for details.
-func DefaultHandler() hermes.Handler {
+func DefaultHandler() fasthttp.RequestHandler {
 	return InstrumentMetricHandler(
 		prometheus.DefaultRegisterer, HandlerFor(prometheus.DefaultGatherer, HandlerOpts{}),
 	)
 }
 
-// Handler returns an hermes.Handler for the promsrv.Service, using
+// Handler returns an fasthttp.RequestHandler for the promsrv.Service, using
 // default HandlerOpts, i.e. it reports the first error as an HTTP error, it has
 // no error logging, and it applies compression if requested by the client.
 //
-// The returned hermes.Handler is already instrumented using the
+// The returned fasthttp.RequestHandler is already instrumented using the
 // InstrumentMetricHandler function and the prometheus.DefaultRegisterer. If you
-// create multiple hermes.Handlers by separate calls of the Handler function, the
+// create multiple fasthttp.RequestHandlers by separate calls of the Handler function, the
 // metrics used for instrumentation will be shared between them, providing
 // global scrape counts.
 //
@@ -82,25 +81,25 @@ func DefaultHandler() hermes.Handler {
 func Handler(srv interface {
 	prometheus.Gatherer
 	prometheus.Registerer
-}) hermes.Handler {
+}) fasthttp.RequestHandler {
 	return InstrumentMetricHandler(
 		srv, HandlerFor(srv, HandlerOpts{}),
 	)
 }
 
-// HandlerFor returns an uninstrumented hermes.Handler for the provided
+// HandlerFor returns an uninstrumented fasthttp.RequestHandler for the provided
 // Gatherer. The behavior of the Handler is defined by the provided
-// HandlerOpts. Thus, HandlerFor is useful to create hermes.Handlers for custom
+// HandlerOpts. Thus, HandlerFor is useful to create fasthttp.RequestHandlers for custom
 // Gatherers, with non-default HandlerOpts, and/or with custom (or no)
 // instrumentation. Use the InstrumentMetricHandler function to apply the same
 // kind of instrumentation as it is used by the Handler function.
-func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) hermes.Handler {
+func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) fasthttp.RequestHandler {
 	var (
 		inFlightSem chan struct{}
 		errCnt      = prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "promhermes_metric_handler_errors_total",
-				Help: "Total number of internal errors encountered by the promhermes metric handler.",
+				Name: "promfasthttp_metric_handler_errors_total",
+				Help: "Total number of internal errors encountered by the promfasthttp metric handler.",
 			},
 			[]string{"cause"},
 		)
@@ -122,15 +121,16 @@ func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) hermes.Handler {
 		}
 	}
 
-	h := hermes.Handler(func(req hermes.Request, res hermes.Response) hermes.Result {
+	h := fasthttp.RequestHandler(func(ctx *fasthttp.RequestCtx) {
 		if inFlightSem != nil {
 			select {
 			case inFlightSem <- struct{}{}: // All good, carry on.
 				defer func() { <-inFlightSem }()
 			default:
-				return res.Error(errMaxConcurrentRequests, fmt.Sprintf(
+				ctx.Error(fmt.Sprintf(
 					"Limit of concurrent requests reached (%d), try again later.", opts.MaxRequestsInFlight,
-				), hermes.StatusServiceUnavailable, errors.Code("max-concurrent-request"), errors.Module("promhermes"))
+				), fasthttp.StatusServiceUnavailable)
+				return
 			}
 		}
 		mfs, err := reg.Gather()
@@ -145,29 +145,29 @@ func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) hermes.Handler {
 			case ContinueOnError:
 				if len(mfs) == 0 {
 					// Still report the error if no metrics have been gathered.
-					return httpError(req, res, err)
+					httpError(ctx, err)
+					return
 				}
 			case HTTPErrorOnError:
-				return httpError(req, res, err)
+				httpError(ctx, err)
+				return
 			}
 		}
 
-		headers := parseHeaders(req)
+		headers := parseHeaders(ctx)
 		contentType := expfmt.Negotiate(headers)
-		res.Header(contentTypeHeader, string(contentType))
+		ctx.Response.Header.Set(contentTypeHeader, string(contentType))
 
-		buf := bytes.NewBuffer(nil)
-		var w io.Writer
-
-		if !opts.DisableCompression && gzipAccepted(req) {
-			res.Header(contentEncodingHeader, "gzip")
+		w := io.Writer(ctx)
+		if !opts.DisableCompression && gzipAccepted(ctx) {
+			ctx.Response.Header.Set(contentEncodingHeader, "gzip")
 			gz := gzipPool.Get().(*gzip.Writer)
 			defer gzipPool.Put(gz)
 
-			gz.Reset(buf)
+			gz.Reset(w)
+			defer gz.Close()
+
 			w = gz
-		} else {
-			w = buf
 		}
 
 		enc := expfmt.NewEncoder(w, contentType)
@@ -186,67 +186,33 @@ func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) hermes.Handler {
 				case ContinueOnError:
 					// Handled later.
 				case HTTPErrorOnError:
-					return httpError(req, res, err)
+					httpError(ctx, err)
+					return
 				}
 			}
 		}
 
 		if lastErr != nil {
-			return httpError(req, res, lastErr)
+			httpError(ctx, lastErr)
+			return
 		}
-
-		if closer, ok := w.(io.Closer); ok {
-			if err := closer.Close(); err != nil {
-				return httpError(req, res, errGzipFailedToClose)
-			}
-		}
-
-		return res.Data(buf.Bytes())
 	})
 
 	if opts.Timeout <= 0 {
 		return h
 	}
 
-	return hermes.Handler(func(req hermes.Request, res hermes.Response) hermes.Result {
-		var r hermes.Result
-
-		ctx, cancelCtx := context.WithTimeout(req.Context(), opts.Timeout)
-		defer cancelCtx()
-
-		req = req.WithContext(ctx)
-
-		done := make(chan struct{})
-		panicChan := make(chan interface{}, 1)
-		go func() {
-			defer func() {
-				if p := recover(); p != nil {
-					panicChan <- p
-				}
-			}()
-			r = h(req, res)
-			close(done)
-		}()
-
-		select {
-		case p := <-panicChan:
-			panic(p)
-		case <-done:
-			return r
-		case <-ctx.Done():
-			return res.Error(errTimeout, fmt.Sprintf(
-				"Exceeded configured timeout of %v.",
-				opts.Timeout,
-			), hermes.StatusRequestTimeout, errors.Code("timeout"), errors.Module("promhermes"))
-		}
-	})
+	return fasthttp.TimeoutHandler(h, opts.Timeout, fmt.Sprintf(
+		"Exceeded configured timeout of %v.\n",
+		opts.Timeout,
+	))
 }
 
-// InstrumentMetricHandler is usually used with an hermes.Handler returned by the
-// HandlerFor function. It instruments the provided hermes.Handler with two
-// metrics: A counter vector "promhermes_metric_handler_requests_total" to count
+// InstrumentMetricHandler is usually used with an fasthttp.RequestHandler returned by the
+// HandlerFor function. It instruments the provided fasthttp.RequestHandler with two
+// metrics: A counter vector "promfasthttp_metric_handler_requests_total" to count
 // scrapes partitioned by HTTP status code, and a gauge
-// "promhermes_metric_handler_requests_in_flight" to track the number of
+// "promfasthttp_metric_handler_requests_in_flight" to track the number of
 // simultaneous scrapes. This function idempotently registers collectors for
 // both metrics with the provided Registerer. It panics if the registration
 // fails. The provided metrics are useful to see how many scrapes hit the
@@ -258,10 +224,10 @@ func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) hermes.Handler {
 // code is known). For tracking scrape durations, use the
 // "scrape_duration_seconds" gauge created by the Prometheus server upon each
 // scrape.
-func InstrumentMetricHandler(reg prometheus.Registerer, handler hermes.Handler) hermes.Handler {
+func InstrumentMetricHandler(reg prometheus.Registerer, handler fasthttp.RequestHandler) fasthttp.RequestHandler {
 	cnt := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "promhermes_metric_handler_requests_total",
+			Name: "promfasthttp_metric_handler_requests_total",
 			Help: "Total number of scrapes by HTTP status code.",
 		},
 		[]string{"code"},
@@ -279,7 +245,7 @@ func InstrumentMetricHandler(reg prometheus.Registerer, handler hermes.Handler) 
 	}
 
 	gge := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "promhermes_metric_handler_requests_in_flight",
+		Name: "promfasthttp_metric_handler_requests_in_flight",
 		Help: "Current number of scrapes being served.",
 	})
 	if err := reg.Register(gge); err != nil {
@@ -310,7 +276,7 @@ const (
 	// recommended to provide other means of detecting errors: By setting an
 	// ErrorLog in HandlerOpts, the errors are logged. By providing a
 	// Registry in HandlerOpts, the exposed metrics include an error counter
-	// "promhermes_metric_handler_errors_total", which can be used for
+	// "promfasthttp_metric_handler_errors_total", which can be used for
 	// alerts.
 	ContinueOnError
 	// Panic upon the first error encountered (useful for "crash only" apps).
@@ -324,7 +290,7 @@ type Logger interface {
 	Println(v ...interface{})
 }
 
-// HandlerOpts specifies options how to serve metrics via an hermes.Handler. The
+// HandlerOpts specifies options how to serve metrics via an fasthttp.RequestHandler. The
 // zero value of HandlerOpts is a reasonable default.
 type HandlerOpts struct {
 	// ErrorLog specifies an optional logger for errors collecting and
@@ -335,7 +301,7 @@ type HandlerOpts struct {
 	// is not nil.
 	ErrorHandling HandlerErrorHandling
 	// If Registry is not nil, it is used to register a metric
-	// "promhermes_metric_handler_errors_total", partitioned by "cause". A
+	// "promfasthttp_metric_handler_errors_total", partitioned by "cause". A
 	// failed registration causes a panic. Note that this error counter is
 	// different from the instrumentation you get from the various
 	// InstrumentHandler... helpers. It counts errors that don't necessarily
@@ -367,8 +333,8 @@ type HandlerOpts struct {
 }
 
 // gzipAccepted returns whether the client will accept gzip-encoded content.
-func gzipAccepted(req hermes.Request) bool {
-	a := req.Header(acceptEncodingHeader)
+func gzipAccepted(ctx *fasthttp.RequestCtx) bool {
+	a := ctx.Request.Header.Peek(acceptEncodingHeader)
 	parts := strings.Split(string(a), ",")
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
@@ -385,14 +351,11 @@ func gzipAccepted(req hermes.Request) bool {
 // hermes.Error, any header settings will be void if the header has already been
 // sent. The error message will still be written to the writer, but it will
 // probably be of limited use.
-func httpError(req hermes.Request, res hermes.Response, err error) hermes.Result {
-	req.Raw().Response.Header.Del(contentEncodingHeader)
+func httpError(ctx *fasthttp.RequestCtx, err error) {
+	ctx.Response.Header.Del(contentEncodingHeader)
 
-	return res.Error(
-		err,
-		"An error has occurred while serving metrics: "+err.Error(),
-		hermes.StatusInternalServerError,
-		errors.Code("prometheus-failed"),
-		errors.Module("promhermes"),
+	ctx.Error(
+		"An error has occurred while serving metrics:\n\n"+err.Error(),
+		http.StatusInternalServerError,
 	)
 }
