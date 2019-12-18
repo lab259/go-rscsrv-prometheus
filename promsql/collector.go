@@ -40,7 +40,7 @@ func NewDatabaseCollector(db dbStats, opts DatabaseCollectorOpts) *databaseColle
 		descPoolInUse:           prometheus.NewDesc(fmt.Sprintf("db_%spool_in_use", prefix), "The number of connections currently in use.", nil, nil),
 		descPoolIdle:            prometheus.NewDesc(fmt.Sprintf("db_%spool_idle", prefix), "The number of idle connections.", nil, nil),
 		descWaitCount:           prometheus.NewDesc(fmt.Sprintf("db_%swait_count", prefix), "The total number of connections waited for.", nil, nil),
-		descWaitDuration:        prometheus.NewDesc(fmt.Sprintf("db_%swait_duration", prefix), "// The total time blocked waiting for a new connection.", nil, nil),
+		descWaitDuration:        prometheus.NewDesc(fmt.Sprintf("db_%swait_duration", prefix), "The total time blocked waiting for a new connection.", nil, nil),
 		descMaxIdleClosed:       prometheus.NewDesc(fmt.Sprintf("db_%smax_idle_closed", prefix), "The total number of connections closed due to SetMaxIdleConns.", nil, nil),
 		descMaxLifetimeClosed:   prometheus.NewDesc(fmt.Sprintf("db_%smax_lifetime_closed", prefix), "The total number of connections closed due to SetConnMaxLifetime.", nil, nil),
 	}
