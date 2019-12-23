@@ -25,6 +25,29 @@ cd go-rscsrv-prometheus && go mod download
 
 :wink: Finally, you are done to start developing.
 
+### Collectors
+
+**database/sql.DB**
+
+Given a `*sql.DB` instance, you can create a collector by using `promsql.NewDatabaseCollector(db, opts)`.
+
+The information provided by the collector will generate these metrics:
+
+- db_max_open_connections: Maximum number of open connections to the database.
+- db_pool_open_connections: The number of established connections both in use and idle.
+- db_pool_in_use: The number of connections currently in use.
+- db_pool_idle: The number of idle connections.
+- db_wait_count: The total number of connections waited for.
+- db_wait_duration: The total time blocked waiting for a new connection.
+- db_max_idle_closed: The total number of connections closed due to SetMaxIdleConns.
+- db_max_lifetime_closed: The total number of connections closed due to SetConnMaxLifetime.
+
+_All these metrics are provided by the `database/sql` package interface._
+
+**opts: _promsql.DatabaseCollectorOpts_**
+- Prefix `string`: That will add a prefix to the metrics names. So, for example, `db_max_open_connections` will become `db_PREFIX_max_open_connections`.
+
+
 ### Running tests
 
 In the `src/github.com/lab259/go-rscsrv-prometheus` directory, execute:
