@@ -50,6 +50,12 @@ _All these metrics are provided by the `database/sql` package interface._
 
 ### Running tests
 
+In order to run the tests, spin up the :
+
+```bash
+make dco-test-up
+```
+
 In the `src/github.com/lab259/go-rscsrv-prometheus` directory, execute:
 
 ```bash
