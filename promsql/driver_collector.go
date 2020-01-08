@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 	"strconv"
@@ -15,6 +16,131 @@ import (
 )
 
 // Implementation based on https://github.com/opencensus-integrations/ocsql
+
+type DriverCollector struct {
+	DriverName string
+	parent     driver.Driver
+	connector  driver.Connector
+
+	// prometheus counters
+	QueryTotalCounter                  prometheus.Counter
+	QuerySuccessfulCounter             prometheus.Counter
+	QueryErroneousCounter              prometheus.Counter
+	TransactionTotalCounter            prometheus.Counter
+	TransactionSuccessfulAmountCounter prometheus.Counter
+	TransactionErroneousAmountCounter  prometheus.Counter
+	ExecutionTotalCounter              prometheus.Counter
+	ExecutionSuccessfulAmountCounter   prometheus.Counter
+	ExecutionErroneousAmountCounter    prometheus.Counter
+
+	// prometheus describers
+	descQueryTotalCounter                  *prometheus.Desc
+	descQuerySuccessfulCounter             *prometheus.Desc
+	descQueryErroneousCounter              *prometheus.Desc
+	descTransactionTotalCounter            *prometheus.Desc
+	descTransactionSuccessfulAmountCounter *prometheus.Desc
+	descTransactionErroneousAmountCounter  *prometheus.Desc
+	descExecutionTotalCounter              *prometheus.Desc
+	descExecutionSuccessfulAmountCounter   *prometheus.Desc
+	descExecutionErroneousAmountCounter    *prometheus.Desc
+}
+
+type DriverCollectorOpts struct {
+	DriverName string
+	Prefix     string
+}
+
+func NewDriverCollector(driver driver.Driver, opts DriverCollectorOpts) *DriverCollector {
+	prefix := opts.Prefix
+	if prefix != "" && !strings.HasSuffix(opts.Prefix, "_") {
+		prefix += "_"
+	}
+
+	return &DriverCollector{
+		parent:                             driver,
+		DriverName:                         opts.DriverName,
+		QueryTotalCounter:                  prometheus.NewCounter(prometheus.CounterOpts{}),
+		QuerySuccessfulCounter:             prometheus.NewCounter(prometheus.CounterOpts{}),
+		QueryErroneousCounter:              prometheus.NewCounter(prometheus.CounterOpts{}),
+		TransactionTotalCounter:            prometheus.NewCounter(prometheus.CounterOpts{}),
+		TransactionSuccessfulAmountCounter: prometheus.NewCounter(prometheus.CounterOpts{}),
+		TransactionErroneousAmountCounter:  prometheus.NewCounter(prometheus.CounterOpts{}),
+		ExecutionTotalCounter:              prometheus.NewCounter(prometheus.CounterOpts{}),
+		ExecutionSuccessfulAmountCounter:   prometheus.NewCounter(prometheus.CounterOpts{}),
+		ExecutionErroneousAmountCounter:    prometheus.NewCounter(prometheus.CounterOpts{}),
+
+		descQueryTotalCounter:                  prometheus.NewDesc(fmt.Sprintf("db_%squery_total", prefix), "The total number of queries processed.", nil, nil),
+		descQuerySuccessfulCounter:             prometheus.NewDesc(fmt.Sprintf("db_%squery_successful", prefix), "The number of queries processed with success.", nil, nil),
+		descQueryErroneousCounter:              prometheus.NewDesc(fmt.Sprintf("db_%squery_erroneous", prefix), "The number of queries processed with failure.", nil, nil),
+		descTransactionTotalCounter:            prometheus.NewDesc(fmt.Sprintf("db_%stransaction_total", prefix), "The total number of transactions processed.", nil, nil),
+		descTransactionSuccessfulAmountCounter: prometheus.NewDesc(fmt.Sprintf("db_%stransaction_successful", prefix), "The number of transactions processed with success.", nil, nil),
+		descTransactionErroneousAmountCounter:  prometheus.NewDesc(fmt.Sprintf("db_%stransaction_erroneous", prefix), "The number of transactions processed with failure.", nil, nil),
+		descExecutionTotalCounter:              prometheus.NewDesc(fmt.Sprintf("db_%sexecution_total", prefix), "The total number of executions processed.", nil, nil),
+		descExecutionSuccessfulAmountCounter:   prometheus.NewDesc(fmt.Sprintf("db_%sexecution_successful", prefix), "The number of executions processed with success.", nil, nil),
+		descExecutionErroneousAmountCounter:    prometheus.NewDesc(fmt.Sprintf("db_%sexecution_erroneous", prefix), "The number of executions processed with failure.", nil, nil),
+	}
+}
+
+func (collector *DriverCollector) Describe(descs chan<- *prometheus.Desc) {
+	descs <- collector.descQueryTotalCounter
+	descs <- collector.descQuerySuccessfulCounter
+	descs <- collector.descQueryErroneousCounter
+	descs <- collector.descTransactionTotalCounter
+	descs <- collector.descTransactionSuccessfulAmountCounter
+	descs <- collector.descTransactionErroneousAmountCounter
+	descs <- collector.descExecutionTotalCounter
+	descs <- collector.descExecutionSuccessfulAmountCounter
+	descs <- collector.descExecutionErroneousAmountCounter
+}
+
+func (collector *DriverCollector) Collect(metrics chan<- prometheus.Metric) {
+	collector.QueryTotalCounter.Collect(metrics)
+	collector.QuerySuccessfulCounter.Collect(metrics)
+	collector.QueryErroneousCounter.Collect(metrics)
+	collector.TransactionTotalCounter.Collect(metrics)
+	collector.TransactionSuccessfulAmountCounter.Collect(metrics)
+	collector.TransactionErroneousAmountCounter.Collect(metrics)
+	collector.ExecutionTotalCounter.Collect(metrics)
+	collector.ExecutionSuccessfulAmountCounter.Collect(metrics)
+	collector.ExecutionErroneousAmountCounter.Collect(metrics)
+}
+
+func (d *DriverCollector) Open(name string) (driver.Conn, error) {
+	c, err := d.parent.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	return wrapConn(c, d), nil
+}
+
+func wrapConn(parent driver.Conn, collector *DriverCollector) driver.Conn {
+	var (
+		n, hasNameValueChecker = parent.(driver.NamedValueChecker)
+		s, hasSessionResetter  = parent.(driver.SessionResetter)
+	)
+	c := &ocConn{parent: parent, collector: collector}
+	switch {
+	case !hasNameValueChecker && !hasSessionResetter:
+		return c
+	case hasNameValueChecker && !hasSessionResetter:
+		return struct {
+			conn
+			driver.NamedValueChecker
+		}{c, n}
+	case !hasNameValueChecker && hasSessionResetter:
+		return struct {
+			conn
+			driver.SessionResetter
+		}{c, s}
+	case hasNameValueChecker && hasSessionResetter:
+		return struct {
+			conn
+			driver.NamedValueChecker
+			driver.SessionResetter
+		}{c, n, s}
+	}
+	panic("unreachable")
+}
 
 type conn interface {
 	driver.Pinger
@@ -72,110 +198,6 @@ func Wrap(d driver.Driver, options DriverCollectorOpts) *DriverCollector {
 
 func wrapDriver(d driver.Driver, o DriverCollectorOpts) *DriverCollector {
 	return NewDriverCollector(d, o)
-}
-
-type DriverCollector struct {
-	DriverName string
-	parent     driver.Driver
-	connector  driver.Connector
-
-	// prometheus counters
-	QueryTotalCounter                  prometheus.Counter
-	QuerySuccessfulCounter             prometheus.Counter
-	QueryErroneousCounter              prometheus.Counter
-	TransactionTotalCounter            prometheus.Counter
-	TransactionSuccessfulAmountCounter prometheus.Counter
-	TransactionErroneousAmountCounter  prometheus.Counter
-	ExecutionTotalCounter              prometheus.Counter
-	ExecutionSuccessfulAmountCounter   prometheus.Counter
-	ExecutionErroneousAmountCounter    prometheus.Counter
-}
-
-type DriverCollectorOpts struct {
-	DriverName string
-	Prefix     string
-}
-
-func NewDriverCollector(driver driver.Driver, opts DriverCollectorOpts) *DriverCollector {
-	prefix := opts.Prefix
-	if prefix != "" && !strings.HasSuffix(opts.Prefix, "_") {
-		prefix += "_"
-	}
-
-	return &DriverCollector{
-		parent:                             driver,
-		DriverName:                         opts.DriverName,
-		QueryTotalCounter:                  prometheus.NewCounter(prometheus.CounterOpts{}),
-		QuerySuccessfulCounter:             prometheus.NewCounter(prometheus.CounterOpts{}),
-		QueryErroneousCounter:              prometheus.NewCounter(prometheus.CounterOpts{}),
-		TransactionTotalCounter:            prometheus.NewCounter(prometheus.CounterOpts{}),
-		TransactionSuccessfulAmountCounter: prometheus.NewCounter(prometheus.CounterOpts{}),
-		TransactionErroneousAmountCounter:  prometheus.NewCounter(prometheus.CounterOpts{}),
-		ExecutionTotalCounter:              prometheus.NewCounter(prometheus.CounterOpts{}),
-		ExecutionSuccessfulAmountCounter:   prometheus.NewCounter(prometheus.CounterOpts{}),
-		ExecutionErroneousAmountCounter:    prometheus.NewCounter(prometheus.CounterOpts{}),
-	}
-}
-
-func (collector *DriverCollector) Describe(descs chan<- *prometheus.Desc) {
-	descs <- collector.QueryTotalCounter.Desc()
-	descs <- collector.QuerySuccessfulCounter.Desc()
-	descs <- collector.QueryErroneousCounter.Desc()
-	descs <- collector.TransactionTotalCounter.Desc()
-	descs <- collector.TransactionSuccessfulAmountCounter.Desc()
-	descs <- collector.TransactionErroneousAmountCounter.Desc()
-	descs <- collector.ExecutionTotalCounter.Desc()
-	descs <- collector.ExecutionSuccessfulAmountCounter.Desc()
-	descs <- collector.ExecutionErroneousAmountCounter.Desc()
-}
-
-func (collector *DriverCollector) Collect(metrics chan<- prometheus.Metric) {
-	collector.QueryTotalCounter.Collect(metrics)
-	collector.QuerySuccessfulCounter.Collect(metrics)
-	collector.QueryErroneousCounter.Collect(metrics)
-	collector.TransactionTotalCounter.Collect(metrics)
-	collector.TransactionSuccessfulAmountCounter.Collect(metrics)
-	collector.TransactionErroneousAmountCounter.Collect(metrics)
-	collector.ExecutionTotalCounter.Collect(metrics)
-	collector.ExecutionSuccessfulAmountCounter.Collect(metrics)
-	collector.ExecutionErroneousAmountCounter.Collect(metrics)
-}
-
-func (d *DriverCollector) Open(name string) (driver.Conn, error) {
-	c, err := d.parent.Open(name)
-	if err != nil {
-		return nil, err
-	}
-	return wrapConn(c, d), nil
-}
-
-func wrapConn(parent driver.Conn, collector *DriverCollector) driver.Conn {
-	var (
-		n, hasNameValueChecker = parent.(driver.NamedValueChecker)
-		s, hasSessionResetter  = parent.(driver.SessionResetter)
-	)
-	c := &ocConn{parent: parent, collector: collector}
-	switch {
-	case !hasNameValueChecker && !hasSessionResetter:
-		return c
-	case hasNameValueChecker && !hasSessionResetter:
-		return struct {
-			conn
-			driver.NamedValueChecker
-		}{c, n}
-	case !hasNameValueChecker && hasSessionResetter:
-		return struct {
-			conn
-			driver.SessionResetter
-		}{c, s}
-	case hasNameValueChecker && hasSessionResetter:
-		return struct {
-			conn
-			driver.NamedValueChecker
-			driver.SessionResetter
-		}{c, n, s}
-	}
-	panic("unreachable")
 }
 
 // ocConn implements driver.Conn
