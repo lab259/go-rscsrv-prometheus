@@ -48,6 +48,62 @@ _All these metrics are provided by the `database/sql` package interface._
 - Prefix `string`: That will add a prefix to the metrics names. So, for example, `db_max_open_connections` will become `db_PREFIX_max_open_connections`.
 
 
+**database/sql/driver**
+
+Given a driver name (e.g. `postgres`), you can create a collector by using `promsql.Register(opts)`.
+
+The information provided by the collector will generate these metrics:
+
+- db_query_total: The total number of queries processed.
+- db_query_successful: The number of queries processed with success.
+- db_query_erroneous: The number of queries processed with failure.
+- db_transaction_total: The total number of transactions processed.
+- db_transaction_successful: The number of transactions processed with success.
+- db_transaction_erroneous: The number of transactions processed with failure.
+- db_execution_total: The total number of executions processed.
+- db_execution_successful: The number of executions processed with success.
+- db_execution_erroneous: The number of executions processed with failure.
+
+**opts: _promsql.DriverCollectorOpts**
+- DriverName `string`: The base driver name that will be used by sql package (e.g. `postgres`, `mysql`)
+- Prefix `string`: That will add a prefix to the metrics names. So, for example, `db_query_total` will become `db_PREFIX_query_total`.
+
+
+### Usage
+
+#### DriverCollector
+
+First you have to start a PostgreSQL service
+
+```
+docker-compose up
+```
+
+Then you can run: 
+
+```go
+// Register our driver collector wrapper
+driverCollector, err := promsql.Register(promsql.DriverCollectorOpts{
+    DriverName: "postgres",
+})
+if err != nil {
+    log.Fatalf("unable to register the driver collector: %v\n", err)
+}
+
+// Open sql connection with our driver name wrapper 
+psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=db-example sslmode=disable")
+db, err := sql.Open(driverCollector.DriverName, psqlInfo)
+
+// Execute some query
+rs, err := db.Query("select name from users where id = 1")
+defer rs.Close()
+
+// Retrieve the total number of queries processed
+var metric dto.Metric
+driverCollector.QueryTotalCounter.Write(&metric)
+fmt.Println(metric.GetCounter().GetValue()) // 1
+```
+
 ### Running tests
 
 In order to run the tests, spin up the :
