@@ -172,7 +172,7 @@ var _ = Describe("Driver Collector", func() {
 			Expect(err).Should(HaveOccurred())
 
 			var metric dto.Metric
-			Expect(driverCollector.QueryErroneousCounter.Write(&metric)).To(Succeed())
+			Expect(driverCollector.QueryFailedCounter.Write(&metric)).To(Succeed())
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
 		})
 
@@ -190,13 +190,13 @@ var _ = Describe("Driver Collector", func() {
 			Expect(err).Should(HaveOccurred())
 
 			var metric dto.Metric
-			Expect(driverCollector.QueryErroneousCounter.Write(&metric)).To(Succeed())
+			Expect(driverCollector.QueryFailedCounter.Write(&metric)).To(Succeed())
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
 
 			_, err = db.Query("wrong example query")
 			Expect(err).Should(HaveOccurred())
 
-			Expect(driverCollector.QueryErroneousCounter.Write(&metric)).To(Succeed())
+			Expect(driverCollector.QueryFailedCounter.Write(&metric)).To(Succeed())
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(2))
 		})
 	})
@@ -304,7 +304,7 @@ var _ = Describe("Driver Collector", func() {
 			Expect(tx.Commit()).ShouldNot(HaveOccurred())
 
 			var metric dto.Metric
-			Expect(driverCollector.TransactionSuccessfulAmountCounter.Write(&metric)).To(Succeed())
+			Expect(driverCollector.TransactionSuccessfulCounter.Write(&metric)).To(Succeed())
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
 		})
 
@@ -348,7 +348,7 @@ var _ = Describe("Driver Collector", func() {
 			Expect(tx.Commit()).ShouldNot(HaveOccurred())
 
 			var metric dto.Metric
-			Expect(driverCollector.TransactionSuccessfulAmountCounter.Write(&metric)).To(Succeed())
+			Expect(driverCollector.TransactionSuccessfulCounter.Write(&metric)).To(Succeed())
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(2))
 		})
 
@@ -377,7 +377,7 @@ var _ = Describe("Driver Collector", func() {
 			Expect(tx.Commit()).Should(HaveOccurred())
 
 			var metric dto.Metric
-			Expect(driverCollector.TransactionErroneousAmountCounter.Write(&metric)).To(Succeed())
+			Expect(driverCollector.TransactionFailedCounter.Write(&metric)).To(Succeed())
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
 		})
 
@@ -420,7 +420,7 @@ var _ = Describe("Driver Collector", func() {
 			Expect(tx.Commit()).Should(HaveOccurred())
 
 			var metric dto.Metric
-			Expect(driverCollector.TransactionErroneousAmountCounter.Write(&metric)).To(Succeed())
+			Expect(driverCollector.TransactionFailedCounter.Write(&metric)).To(Succeed())
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(2))
 		})
 	})
@@ -496,7 +496,7 @@ var _ = Describe("Driver Collector", func() {
 			Expect(rowsCounter).To(BeEquivalentTo(1))
 
 			var metric dto.Metric
-			Expect(driverCollector.ExecutionSuccessfulAmountCounter.Write(&metric)).To(Succeed())
+			Expect(driverCollector.ExecutionSuccessfulCounter.Write(&metric)).To(Succeed())
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
 		})
 
@@ -526,7 +526,7 @@ var _ = Describe("Driver Collector", func() {
 			Expect(rowsCounter).To(BeEquivalentTo(1))
 
 			var metric dto.Metric
-			Expect(driverCollector.ExecutionSuccessfulAmountCounter.Write(&metric)).To(Succeed())
+			Expect(driverCollector.ExecutionSuccessfulCounter.Write(&metric)).To(Succeed())
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(2))
 		})
 
@@ -545,7 +545,7 @@ var _ = Describe("Driver Collector", func() {
 			Expect(err).Should(HaveOccurred())
 
 			var metric dto.Metric
-			Expect(driverCollector.ExecutionErroneousAmountCounter.Write(&metric)).To(Succeed())
+			Expect(driverCollector.ExecutionFailedCounter.Write(&metric)).To(Succeed())
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
 		})
 
@@ -568,7 +568,7 @@ var _ = Describe("Driver Collector", func() {
 			Expect(err).Should(HaveOccurred())
 
 			var metric dto.Metric
-			Expect(driverCollector.ExecutionErroneousAmountCounter.Write(&metric)).To(Succeed())
+			Expect(driverCollector.ExecutionFailedCounter.Write(&metric)).To(Succeed())
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(2))
 		})
 	})

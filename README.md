@@ -56,13 +56,13 @@ The information provided by the collector will generate these metrics:
 
 - db_query_total: The total number of queries processed.
 - db_query_successful: The number of queries processed with success.
-- db_query_erroneous: The number of queries processed with failure.
+- db_query_failed: The number of queries processed with failure.
 - db_transaction_total: The total number of transactions processed.
 - db_transaction_successful: The number of transactions processed with success.
-- db_transaction_erroneous: The number of transactions processed with failure.
+- db_transaction_failed: The number of transactions processed with failure.
 - db_execution_total: The total number of executions processed.
 - db_execution_successful: The number of executions processed with success.
-- db_execution_erroneous: The number of executions processed with failure.
+- db_execution_failed: The number of executions processed with failure.
 
 **opts: _promsql.DriverCollectorOpts**
 - DriverName `string`: The base driver name that will be used by sql package (e.g. `postgres`, `mysql`)
