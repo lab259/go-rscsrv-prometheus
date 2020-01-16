@@ -32,17 +32,6 @@ type DriverCollector struct {
 	ExecutionTotalCounter        prometheus.Counter
 	ExecutionSuccessfulCounter   prometheus.Counter
 	ExecutionFailedCounter       prometheus.Counter
-
-	// prometheus describers
-	descQueryTotalCounter            *prometheus.Desc
-	descQuerySuccessfulCounter       *prometheus.Desc
-	descQueryFailedCounter           *prometheus.Desc
-	descTransactionTotalCounter      *prometheus.Desc
-	descTransactionSuccessfulCounter *prometheus.Desc
-	descTransactionFailedCounter     *prometheus.Desc
-	descExecutionTotalCounter        *prometheus.Desc
-	descExecutionSuccessfulCounter   *prometheus.Desc
-	descExecutionFailedCounter       *prometheus.Desc
 }
 
 type DriverCollectorOpts struct {
@@ -57,40 +46,58 @@ func NewDriverCollector(driver driver.Driver, opts DriverCollectorOpts) *DriverC
 	}
 
 	return &DriverCollector{
-		parent:                       driver,
-		DriverName:                   opts.DriverName,
-		QueryTotalCounter:            prometheus.NewCounter(prometheus.CounterOpts{}),
-		QuerySuccessfulCounter:       prometheus.NewCounter(prometheus.CounterOpts{}),
-		QueryFailedCounter:           prometheus.NewCounter(prometheus.CounterOpts{}),
-		TransactionTotalCounter:      prometheus.NewCounter(prometheus.CounterOpts{}),
-		TransactionSuccessfulCounter: prometheus.NewCounter(prometheus.CounterOpts{}),
-		TransactionFailedCounter:     prometheus.NewCounter(prometheus.CounterOpts{}),
-		ExecutionTotalCounter:        prometheus.NewCounter(prometheus.CounterOpts{}),
-		ExecutionSuccessfulCounter:   prometheus.NewCounter(prometheus.CounterOpts{}),
-		ExecutionFailedCounter:       prometheus.NewCounter(prometheus.CounterOpts{}),
+		parent:     driver,
+		DriverName: opts.DriverName,
 
-		descQueryTotalCounter:            prometheus.NewDesc(fmt.Sprintf("db_%squery_total", prefix), "The total number of queries processed.", nil, nil),
-		descQuerySuccessfulCounter:       prometheus.NewDesc(fmt.Sprintf("db_%squery_successful", prefix), "The number of queries processed with success.", nil, nil),
-		descQueryFailedCounter:           prometheus.NewDesc(fmt.Sprintf("db_%squery_failed", prefix), "The number of queries processed with failure.", nil, nil),
-		descTransactionTotalCounter:      prometheus.NewDesc(fmt.Sprintf("db_%stransaction_total", prefix), "The total number of transactions processed.", nil, nil),
-		descTransactionSuccessfulCounter: prometheus.NewDesc(fmt.Sprintf("db_%stransaction_successful", prefix), "The number of transactions processed with success.", nil, nil),
-		descTransactionFailedCounter:     prometheus.NewDesc(fmt.Sprintf("db_%stransaction_failed", prefix), "The number of transactions processed with failure.", nil, nil),
-		descExecutionTotalCounter:        prometheus.NewDesc(fmt.Sprintf("db_%sexecution_total", prefix), "The total number of executions processed.", nil, nil),
-		descExecutionSuccessfulCounter:   prometheus.NewDesc(fmt.Sprintf("db_%sexecution_successful", prefix), "The number of executions processed with success.", nil, nil),
-		descExecutionFailedCounter:       prometheus.NewDesc(fmt.Sprintf("db_%sexecution_failed", prefix), "The number of executions processed with failure.", nil, nil),
+		QueryTotalCounter: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: fmt.Sprintf("db_%squery_total", prefix),
+			Help: "The total number of queries processed.",
+		}),
+		QuerySuccessfulCounter: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: fmt.Sprintf("db_%squery_successful", prefix),
+			Help: "The number of queries processed with success.",
+		}),
+		QueryFailedCounter: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: fmt.Sprintf("db_%squery_failed", prefix),
+			Help: "The number of queries processed with failure.",
+		}),
+		TransactionTotalCounter: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: fmt.Sprintf("db_%stransaction_total", prefix),
+			Help: "The total number of transactions processed.",
+		}),
+		TransactionSuccessfulCounter: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: fmt.Sprintf("db_%stransaction_successful", prefix),
+			Help: "The number of transactions processed with success.",
+		}),
+		TransactionFailedCounter: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: fmt.Sprintf("db_%stransaction_failed", prefix),
+			Help: "The number of transactions processed with failure.",
+		}),
+		ExecutionTotalCounter: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: fmt.Sprintf("db_%sexecution_total", prefix),
+			Help: "The total number of executions processed.",
+		}),
+		ExecutionSuccessfulCounter: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: fmt.Sprintf("db_%sexecution_successful", prefix),
+			Help: "The number of executions processed with success.",
+		}),
+		ExecutionFailedCounter: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: fmt.Sprintf("db_%sexecution_failed", prefix),
+			Help: "The number of executions processed with failure.",
+		}),
 	}
 }
 
 func (collector *DriverCollector) Describe(descs chan<- *prometheus.Desc) {
-	descs <- collector.descQueryTotalCounter
-	descs <- collector.descQuerySuccessfulCounter
-	descs <- collector.descQueryFailedCounter
-	descs <- collector.descTransactionTotalCounter
-	descs <- collector.descTransactionSuccessfulCounter
-	descs <- collector.descTransactionFailedCounter
-	descs <- collector.descExecutionTotalCounter
-	descs <- collector.descExecutionSuccessfulCounter
-	descs <- collector.descExecutionFailedCounter
+	descs <- collector.QueryTotalCounter.Desc()
+	descs <- collector.QuerySuccessfulCounter.Desc()
+	descs <- collector.QueryFailedCounter.Desc()
+	descs <- collector.TransactionTotalCounter.Desc()
+	descs <- collector.TransactionSuccessfulCounter.Desc()
+	descs <- collector.TransactionFailedCounter.Desc()
+	descs <- collector.ExecutionTotalCounter.Desc()
+	descs <- collector.ExecutionSuccessfulCounter.Desc()
+	descs <- collector.ExecutionFailedCounter.Desc()
 }
 
 func (collector *DriverCollector) Collect(metrics chan<- prometheus.Metric) {
