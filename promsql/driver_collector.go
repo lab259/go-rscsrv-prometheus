@@ -23,15 +23,18 @@ type DriverCollector struct {
 	connector  driver.Connector
 
 	// prometheus counters
-	QueryTotalCounter            prometheus.Counter
-	QuerySuccessfulCounter       prometheus.Counter
-	QueryFailedCounter           prometheus.Counter
-	TransactionTotalCounter      prometheus.Counter
-	TransactionSuccessfulCounter prometheus.Counter
-	TransactionFailedCounter     prometheus.Counter
-	ExecutionTotalCounter        prometheus.Counter
-	ExecutionSuccessfulCounter   prometheus.Counter
-	ExecutionFailedCounter       prometheus.Counter
+	QueryTotalCounter                    prometheus.Counter
+	QuerySuccessfulCounter               prometheus.Counter
+	QueryFailedCounter                   prometheus.Counter
+	TransactionCommitTotalCounter        prometheus.Counter
+	TransactionCommitSuccessfulCounter   prometheus.Counter
+	TransactionCommitFailedCounter       prometheus.Counter
+	TransactionRollbackTotalCounter      prometheus.Counter
+	TransactionRollbackSuccessfulCounter prometheus.Counter
+	TransactionRollbackFailedCounter     prometheus.Counter
+	ExecutionTotalCounter                prometheus.Counter
+	ExecutionSuccessfulCounter           prometheus.Counter
+	ExecutionFailedCounter               prometheus.Counter
 }
 
 type DriverCollectorOpts struct {
@@ -61,17 +64,29 @@ func NewDriverCollector(driver driver.Driver, opts DriverCollectorOpts) *DriverC
 			Name: fmt.Sprintf("db_%squery_failed", prefix),
 			Help: "The number of queries processed with failure.",
 		}),
-		TransactionTotalCounter: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: fmt.Sprintf("db_%stransaction_total", prefix),
-			Help: "The total number of transactions processed.",
+		TransactionCommitTotalCounter: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: fmt.Sprintf("db_%stransaction_commit_total", prefix),
+			Help: "The total number of transactions commit processed.",
 		}),
-		TransactionSuccessfulCounter: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: fmt.Sprintf("db_%stransaction_successful", prefix),
-			Help: "The number of transactions processed with success.",
+		TransactionCommitSuccessfulCounter: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: fmt.Sprintf("db_%stransaction_commit_successful", prefix),
+			Help: "The number of transactions commit processed with success.",
 		}),
-		TransactionFailedCounter: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: fmt.Sprintf("db_%stransaction_failed", prefix),
-			Help: "The number of transactions processed with failure.",
+		TransactionCommitFailedCounter: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: fmt.Sprintf("db_%stransaction_commit_failed", prefix),
+			Help: "The number of transactions commit processed with failure.",
+		}),
+		TransactionRollbackTotalCounter: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: fmt.Sprintf("db_%stransaction_rollback_total", prefix),
+			Help: "The total number of transactions rollback processed.",
+		}),
+		TransactionRollbackSuccessfulCounter: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: fmt.Sprintf("db_%stransaction_rollback_successful", prefix),
+			Help: "The number of transactions rollback processed with success.",
+		}),
+		TransactionRollbackFailedCounter: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: fmt.Sprintf("db_%stransaction_rollback_failed", prefix),
+			Help: "The number of transactions rollback processed with failure.",
 		}),
 		ExecutionTotalCounter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: fmt.Sprintf("db_%sexecution_total", prefix),
@@ -92,9 +107,12 @@ func (collector *DriverCollector) Describe(descs chan<- *prometheus.Desc) {
 	descs <- collector.QueryTotalCounter.Desc()
 	descs <- collector.QuerySuccessfulCounter.Desc()
 	descs <- collector.QueryFailedCounter.Desc()
-	descs <- collector.TransactionTotalCounter.Desc()
-	descs <- collector.TransactionSuccessfulCounter.Desc()
-	descs <- collector.TransactionFailedCounter.Desc()
+	descs <- collector.TransactionCommitTotalCounter.Desc()
+	descs <- collector.TransactionCommitSuccessfulCounter.Desc()
+	descs <- collector.TransactionCommitFailedCounter.Desc()
+	descs <- collector.TransactionRollbackTotalCounter.Desc()
+	descs <- collector.TransactionRollbackSuccessfulCounter.Desc()
+	descs <- collector.TransactionRollbackFailedCounter.Desc()
 	descs <- collector.ExecutionTotalCounter.Desc()
 	descs <- collector.ExecutionSuccessfulCounter.Desc()
 	descs <- collector.ExecutionFailedCounter.Desc()
@@ -104,9 +122,12 @@ func (collector *DriverCollector) Collect(metrics chan<- prometheus.Metric) {
 	collector.QueryTotalCounter.Collect(metrics)
 	collector.QuerySuccessfulCounter.Collect(metrics)
 	collector.QueryFailedCounter.Collect(metrics)
-	collector.TransactionTotalCounter.Collect(metrics)
-	collector.TransactionSuccessfulCounter.Collect(metrics)
-	collector.TransactionFailedCounter.Collect(metrics)
+	collector.TransactionCommitTotalCounter.Collect(metrics)
+	collector.TransactionCommitSuccessfulCounter.Collect(metrics)
+	collector.TransactionCommitFailedCounter.Collect(metrics)
+	collector.TransactionRollbackTotalCounter.Collect(metrics)
+	collector.TransactionRollbackSuccessfulCounter.Collect(metrics)
+	collector.TransactionRollbackFailedCounter.Collect(metrics)
 	collector.ExecutionTotalCounter.Collect(metrics)
 	collector.ExecutionSuccessfulCounter.Collect(metrics)
 	collector.ExecutionFailedCounter.Collect(metrics)
@@ -526,19 +547,27 @@ type ocTx struct {
 }
 
 func (t ocTx) Commit() (err error) {
-	t.collector.TransactionTotalCounter.Inc()
+	t.collector.TransactionCommitTotalCounter.Inc()
 
 	err = t.parent.Commit()
 	if err != nil {
-		t.collector.TransactionFailedCounter.Inc()
+		t.collector.TransactionCommitFailedCounter.Inc()
 	} else {
-		t.collector.TransactionSuccessfulCounter.Inc()
+		t.collector.TransactionCommitSuccessfulCounter.Inc()
 	}
-	return
+	return err
 }
 
 func (t ocTx) Rollback() (err error) {
-	return t.parent.Rollback()
+	t.collector.TransactionRollbackTotalCounter.Inc()
+
+	err = t.parent.Rollback()
+	if err != nil {
+		t.collector.TransactionRollbackFailedCounter.Inc()
+	} else {
+		t.collector.TransactionRollbackSuccessfulCounter.Inc()
+	}
+	return err
 }
 
 func wrapStmt(stmt driver.Stmt, query string, collector *DriverCollector) driver.Stmt {

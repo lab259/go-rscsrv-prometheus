@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -158,7 +159,7 @@ var _ = Describe("Driver Collector", func() {
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(2))
 		})
 
-		It("should increase erroneus to 1", func() {
+		It("should increase failed to 1", func() {
 			driverCollector, err := promsql.Register(promsql.DriverCollectorOpts{
 				DriverName: "postgres",
 			})
@@ -176,7 +177,7 @@ var _ = Describe("Driver Collector", func() {
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
 		})
 
-		It("should increase erroneus to 2", func() {
+		It("should increase failed to 2", func() {
 			driverCollector, err := promsql.Register(promsql.DriverCollectorOpts{
 				DriverName: "postgres",
 			})
@@ -201,8 +202,8 @@ var _ = Describe("Driver Collector", func() {
 		})
 	})
 
-	When("using transactions", func() {
-		It("should increase amount to 1", func() {
+	When("using transactions commit", func() {
+		It("should increase total amount to 1", func() {
 			driverCollector, err := promsql.Register(promsql.DriverCollectorOpts{
 				DriverName: "postgres",
 			})
@@ -229,11 +230,11 @@ var _ = Describe("Driver Collector", func() {
 			Expect(tx.Commit()).ShouldNot(HaveOccurred())
 
 			var metric dto.Metric
-			Expect(driverCollector.TransactionTotalCounter.Write(&metric)).To(Succeed())
+			Expect(driverCollector.TransactionCommitTotalCounter.Write(&metric)).To(Succeed())
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
 		})
 
-		It("should increase amount to 2", func() {
+		It("should increase total amount to 2", func() {
 			driverCollector, err := promsql.Register(promsql.DriverCollectorOpts{
 				DriverName: "postgres",
 			})
@@ -273,7 +274,7 @@ var _ = Describe("Driver Collector", func() {
 			Expect(tx.Commit()).ShouldNot(HaveOccurred())
 
 			var metric dto.Metric
-			Expect(driverCollector.TransactionTotalCounter.Write(&metric)).To(Succeed())
+			Expect(driverCollector.TransactionCommitTotalCounter.Write(&metric)).To(Succeed())
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(2))
 		})
 
@@ -304,7 +305,7 @@ var _ = Describe("Driver Collector", func() {
 			Expect(tx.Commit()).ShouldNot(HaveOccurred())
 
 			var metric dto.Metric
-			Expect(driverCollector.TransactionSuccessfulCounter.Write(&metric)).To(Succeed())
+			Expect(driverCollector.TransactionCommitSuccessfulCounter.Write(&metric)).To(Succeed())
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
 		})
 
@@ -348,11 +349,11 @@ var _ = Describe("Driver Collector", func() {
 			Expect(tx.Commit()).ShouldNot(HaveOccurred())
 
 			var metric dto.Metric
-			Expect(driverCollector.TransactionSuccessfulCounter.Write(&metric)).To(Succeed())
+			Expect(driverCollector.TransactionCommitSuccessfulCounter.Write(&metric)).To(Succeed())
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(2))
 		})
 
-		It("should increase erroneus to 1", func() {
+		It("should increase failed to 1", func() {
 			driverCollector, err := promsql.Register(promsql.DriverCollectorOpts{
 				DriverName: "postgres",
 			})
@@ -377,11 +378,11 @@ var _ = Describe("Driver Collector", func() {
 			Expect(tx.Commit()).Should(HaveOccurred())
 
 			var metric dto.Metric
-			Expect(driverCollector.TransactionFailedCounter.Write(&metric)).To(Succeed())
+			Expect(driverCollector.TransactionCommitFailedCounter.Write(&metric)).To(Succeed())
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
 		})
 
-		It("should increase erroneus to 2", func() {
+		It("should increase failed to 2", func() {
 			driverCollector, err := promsql.Register(promsql.DriverCollectorOpts{
 				DriverName: "postgres",
 			})
@@ -420,7 +421,87 @@ var _ = Describe("Driver Collector", func() {
 			Expect(tx.Commit()).Should(HaveOccurred())
 
 			var metric dto.Metric
-			Expect(driverCollector.TransactionFailedCounter.Write(&metric)).To(Succeed())
+			Expect(driverCollector.TransactionCommitFailedCounter.Write(&metric)).To(Succeed())
+			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(2))
+		})
+	})
+
+	When("using transactions rollback", func() {
+		It("should increase successful amount to 1", func() {
+			driverCollector, err := promsql.Register(promsql.DriverCollectorOpts{
+				DriverName: "postgres",
+			})
+			Expect(err).ShouldNot(HaveOccurred())
+
+			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
+			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
+			Expect(db.Ping()).ShouldNot(HaveOccurred())
+
+			time.Sleep(3 * time.Second)
+
+			tx, err := db.Begin()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			_, err = tx.Exec(`INSERT INTO users (id, name)
+				VALUES(1, 'LeBron James');`)
+			Expect(err).Should(HaveOccurred())
+
+			if err != nil {
+				Expect(tx.Rollback()).ShouldNot(HaveOccurred())
+			} else {
+				Expect(tx.Commit()).ShouldNot(HaveOccurred())
+			}
+
+			var metric dto.Metric
+			Expect(driverCollector.TransactionCommitTotalCounter.Write(&metric)).To(Succeed())
+			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+			Expect(driverCollector.TransactionRollbackTotalCounter.Write(&metric)).To(Succeed())
+			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+			Expect(driverCollector.TransactionRollbackSuccessfulCounter.Write(&metric)).To(Succeed())
+			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+		})
+
+		It("should increase successful amount to 2", func() {
+			driverCollector, err := promsql.Register(promsql.DriverCollectorOpts{
+				DriverName: "postgres",
+			})
+			Expect(err).ShouldNot(HaveOccurred())
+
+			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
+			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
+			Expect(db.Ping()).ShouldNot(HaveOccurred())
+
+			// First transaction
+			tx, err := db.Begin()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			_, err = tx.Exec(`INSERT INTO users (id, name)
+				VALUES(1, 'LeBron James');`)
+			if err != nil {
+				Expect(tx.Rollback()).ShouldNot(HaveOccurred())
+			} else {
+				Expect(tx.Commit()).ShouldNot(HaveOccurred())
+			}
+
+			// Second transaction
+			tx, err = db.Begin()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			_, err = tx.Exec(`INSERT INTO users (id, name)
+				VALUES(1, 'Chistian Bale');`)
+			if err != nil {
+				Expect(tx.Rollback()).ShouldNot(HaveOccurred())
+			} else {
+				Expect(tx.Commit()).ShouldNot(HaveOccurred())
+
+			}
+
+			var metric dto.Metric
+			Expect(driverCollector.TransactionCommitTotalCounter.Write(&metric)).To(Succeed())
+			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+			Expect(driverCollector.TransactionRollbackTotalCounter.Write(&metric)).To(Succeed())
+			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(2))
+			Expect(driverCollector.TransactionRollbackSuccessfulCounter.Write(&metric)).To(Succeed())
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(2))
 		})
 	})
@@ -530,7 +611,7 @@ var _ = Describe("Driver Collector", func() {
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(2))
 		})
 
-		It("should increase erroneus to 1", func() {
+		It("should increase failed to 1", func() {
 			driverCollector, err := promsql.Register(promsql.DriverCollectorOpts{
 				DriverName: "postgres",
 			})
@@ -549,7 +630,7 @@ var _ = Describe("Driver Collector", func() {
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
 		})
 
-		It("should increase erroneus to 2", func() {
+		It("should increase failed to 2", func() {
 			driverCollector, err := promsql.Register(promsql.DriverCollectorOpts{
 				DriverName: "postgres",
 			})
