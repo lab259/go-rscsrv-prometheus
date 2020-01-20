@@ -68,42 +68,6 @@ The information provided by the collector will generate these metrics:
 - DriverName `string`: The base driver name that will be used by sql package (e.g. `postgres`, `mysql`)
 - Prefix `string`: That will add a prefix to the metrics names. So, for example, `db_query_total` will become `db_PREFIX_query_total`.
 
-
-### Usage
-
-#### DriverCollector
-
-First you have to start a PostgreSQL service
-
-```
-docker-compose up
-```
-
-Then you can run: 
-
-```go
-// Register our driver collector wrapper
-driverCollector, err := promsql.Register(promsql.DriverCollectorOpts{
-    DriverName: "postgres",
-})
-if err != nil {
-    log.Fatalf("unable to register the driver collector: %v\n", err)
-}
-
-// Open sql connection with our driver name wrapper 
-psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=db-example sslmode=disable")
-db, err := sql.Open(driverCollector.DriverName, psqlInfo)
-
-// Execute some query
-rs, err := db.Query("select name from users where id = 1")
-defer rs.Close()
-
-// Retrieve the total number of queries processed
-var metric dto.Metric
-driverCollector.QueryTotalCounter.Write(&metric)
-fmt.Println(metric.GetCounter().GetValue()) // 1
-```
-
 ### Running tests
 
 In order to run the tests, spin up the :

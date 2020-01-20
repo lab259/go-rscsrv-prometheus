@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"testing"
-	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -437,8 +436,6 @@ var _ = Describe("Driver Collector", func() {
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
 
-			time.Sleep(3 * time.Second)
-
 			tx, err := db.Begin()
 			Expect(err).ShouldNot(HaveOccurred())
 
@@ -446,11 +443,7 @@ var _ = Describe("Driver Collector", func() {
 				VALUES(1, 'LeBron James');`)
 			Expect(err).Should(HaveOccurred())
 
-			if err != nil {
-				Expect(tx.Rollback()).ShouldNot(HaveOccurred())
-			} else {
-				Expect(tx.Commit()).ShouldNot(HaveOccurred())
-			}
+			Expect(tx.Rollback()).ShouldNot(HaveOccurred())
 
 			var metric dto.Metric
 			Expect(driverCollector.TransactionCommitTotalCounter.Write(&metric)).To(Succeed())
@@ -477,11 +470,9 @@ var _ = Describe("Driver Collector", func() {
 
 			_, err = tx.Exec(`INSERT INTO users (id, name)
 				VALUES(1, 'LeBron James');`)
-			if err != nil {
-				Expect(tx.Rollback()).ShouldNot(HaveOccurred())
-			} else {
-				Expect(tx.Commit()).ShouldNot(HaveOccurred())
-			}
+			Expect(err).Should(HaveOccurred())
+
+			Expect(tx.Rollback()).ShouldNot(HaveOccurred())
 
 			// Second transaction
 			tx, err = db.Begin()
@@ -489,12 +480,9 @@ var _ = Describe("Driver Collector", func() {
 
 			_, err = tx.Exec(`INSERT INTO users (id, name)
 				VALUES(1, 'Chistian Bale');`)
-			if err != nil {
-				Expect(tx.Rollback()).ShouldNot(HaveOccurred())
-			} else {
-				Expect(tx.Commit()).ShouldNot(HaveOccurred())
+			Expect(err).Should(HaveOccurred())
 
-			}
+			Expect(tx.Rollback()).ShouldNot(HaveOccurred())
 
 			var metric dto.Metric
 			Expect(driverCollector.TransactionCommitTotalCounter.Write(&metric)).To(Succeed())
