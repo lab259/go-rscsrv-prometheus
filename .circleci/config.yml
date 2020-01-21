@@ -3,6 +3,10 @@ jobs:
   build:
     docker:
       - image: lab259/go-circleci:1.12
+
+      - image: postgres:11-alpine
+        environment:
+          POSTGRES_DB: pg-test
     steps:
       - checkout
       - restore_cache:

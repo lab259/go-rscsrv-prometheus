@@ -3,7 +3,6 @@ package promsql_test
 import (
 	"database/sql"
 	"testing"
-	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -39,10 +38,9 @@ var _ = Describe("Database Collector", func() {
 		collector := promsql.NewDatabaseCollector(nil, promsql.DatabaseCollectorOpts{})
 		ch := make(chan *prometheus.Desc)
 		go func() {
-			time.Sleep(time.Second)
+			collector.Describe(ch)
 			close(ch)
 		}()
-		go collector.Describe(ch)
 
 		Expect((<-ch).String()).To(ContainSubstring("db_max_open_connections"))
 		Expect((<-ch).String()).To(ContainSubstring("db_pool_open_connections"))
@@ -60,10 +58,9 @@ var _ = Describe("Database Collector", func() {
 		})
 		ch := make(chan *prometheus.Desc)
 		go func() {
-			time.Sleep(time.Second)
+			collector.Describe(ch)
 			close(ch)
 		}()
-		go collector.Describe(ch)
 
 		Expect((<-ch).String()).To(ContainSubstring("db_test_max_open_connections"))
 		Expect((<-ch).String()).To(ContainSubstring("db_test_pool_open_connections"))
@@ -75,14 +72,13 @@ var _ = Describe("Database Collector", func() {
 		Expect((<-ch).String()).To(ContainSubstring("db_test_max_lifetime_closed"))
 	})
 
-	It("should generate default description names", func() {
+	It("should generate default metric values", func() {
 		collector := promsql.NewDatabaseCollector(&fakeDB{}, promsql.DatabaseCollectorOpts{})
 		ch := make(chan prometheus.Metric)
 		go func() {
-			time.Sleep(time.Second)
+			collector.Collect(ch)
 			close(ch)
 		}()
-		go collector.Collect(ch)
 
 		var metric dto.Metric
 		Expect((<-ch).Write(&metric)).To(Succeed())

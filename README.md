@@ -48,7 +48,33 @@ _All these metrics are provided by the `database/sql` package interface._
 - Prefix `string`: That will add a prefix to the metrics names. So, for example, `db_max_open_connections` will become `db_PREFIX_max_open_connections`.
 
 
+**database/sql/driver**
+
+Given a driver name (e.g. `postgres`), you can create a collector by using `promsql.Register(opts)`.
+
+The information provided by the collector will generate these metrics:
+
+- db_query_total: The total number of queries processed.
+- db_query_successful: The number of queries processed with success.
+- db_query_failed: The number of queries processed with failure.
+- db_transaction_total: The total number of transactions processed.
+- db_transaction_successful: The number of transactions processed with success.
+- db_transaction_failed: The number of transactions processed with failure.
+- db_execution_total: The total number of executions processed.
+- db_execution_successful: The number of executions processed with success.
+- db_execution_failed: The number of executions processed with failure.
+
+**opts: _promsql.DriverCollectorOpts**
+- DriverName `string`: The base driver name that will be used by sql package (e.g. `postgres`, `mysql`)
+- Prefix `string`: That will add a prefix to the metrics names. So, for example, `db_query_total` will become `db_PREFIX_query_total`.
+
 ### Running tests
+
+In order to run the tests, spin up the :
+
+```bash
+make dco-test-up
+```
 
 In the `src/github.com/lab259/go-rscsrv-prometheus` directory, execute:
 

@@ -2,8 +2,10 @@ COVERDIR=$(CURDIR)/.cover
 COVERAGEFILE=$(COVERDIR)/cover.out
 COVERAGEREPORT=$(COVERDIR)/report.html
 
+DOCKERCOMPOSETEST := docker-compose -f docker-compose-test.yml
+
 test:
-	@ginkgo --failFast ./...
+	@go run github.com/onsi/ginkgo/ginkgo -r --failFast -requireSuite --randomizeAllSpecs --randomizeSuites --cover --trace --race -timeout=2m $(TARGET)
 
 test-watch:
 	@ginkgo watch -cover -r ./...
@@ -28,4 +30,10 @@ vet:
 fmt:
 	@go fmt ./...
 
-.PHONY: test test-watch coverage coverage-ci coverage-html vet fmt
+dco-test-up:
+	@${DOCKERCOMPOSETEST} up -d
+
+dco-test-down:
+	@${DOCKERCOMPOSETEST} down --remove-orphans
+
+.PHONY: test test-watch coverage coverage-ci coverage-html vet fmt dco-test-up dco-test-down
