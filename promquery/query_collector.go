@@ -1,6 +1,7 @@
 package promquery
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -33,29 +34,29 @@ func NewQueryCollector(opts *QueryCollectorOpts) *QueryCollector {
 	return &QueryCollector{
 		totalCalls: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "",
-				Help: "",
+				Name: fmt.Sprintf("db_%stotal_calls", prefix),
+				Help: "The total number of calls from a query",
 			},
 			queryCollectorLabels,
 		),
 		totalDuration: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "",
-				Help: "",
+				Name: fmt.Sprintf("db_%stotal_duration", prefix),
+				Help: "The total duration (in seconds) from a query processed",
 			},
 			queryCollectorLabels,
 		),
 		totalSuccess: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "",
-				Help: "",
+				Name: fmt.Sprintf("db_%stotal_success", prefix),
+				Help: "The total number of a query processed with success",
 			},
 			queryCollectorLabels,
 		),
 		totalFailures: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "",
-				Help: "",
+				Name: fmt.Sprintf("db_%stotal_failures", prefix),
+				Help: "The total number of a query processed with failure",
 			},
 			queryCollectorLabels,
 		),
