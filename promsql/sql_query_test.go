@@ -28,7 +28,6 @@ var _ = Describe("PromSQLQuery", func() {
 		db, err := sql.Open(dbDriverName, dbInfo)
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(db.Ping()).ShouldNot(HaveOccurred())
-
 		defer db.Close()
 
 		_, err = db.Exec(`
@@ -67,6 +66,7 @@ var _ = Describe("PromSQLQuery", func() {
 			db, err := sql.Open("postgres", dbInfo)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			promSQL := NewSQLQuery(usersNamedQuery, db)
 
@@ -89,6 +89,7 @@ var _ = Describe("PromSQLQuery", func() {
 			db, err := sql.Open("postgres", dbInfo)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			promSQL := NewSQLQuery(usersNamedQuery, db)
 
@@ -120,6 +121,7 @@ var _ = Describe("PromSQLQuery", func() {
 			db, err := sql.Open("postgres", dbInfo)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			promSQL := NewSQLQuery(usersNamedQuery, db)
 
@@ -142,6 +144,7 @@ var _ = Describe("PromSQLQuery", func() {
 			db, err := sql.Open("postgres", dbInfo)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			promSQL := NewSQLQuery(usersNamedQuery, db)
 

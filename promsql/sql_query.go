@@ -10,17 +10,17 @@ import (
 
 type PromSQLQuery struct {
 	namedQuery *promquery.NamedQueryCollector
-	db         DBProxy
+	db         DBQueryProxy
 }
 
-func NewSQLQuery(namedQuery *promquery.NamedQueryCollector, db DBProxy) *PromSQLQuery {
+func NewSQLQuery(namedQuery *promquery.NamedQueryCollector, db DBQueryProxy) *PromSQLQuery {
 	return &PromSQLQuery{
 		namedQuery: namedQuery,
 		db:         db,
 	}
 }
 
-type DBProxy interface {
+type DBQueryProxy interface {
 	Query(query string, args ...interface{}) (*sql.Rows, error)
 	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
 }
