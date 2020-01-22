@@ -35,9 +35,9 @@ func (srv *PromSQLExec) Exec(Exec string, args ...interface{}) (sql.Result, erro
 	if err != nil {
 		srv.namedExec.TotalFailures.Inc()
 	} else {
-		rowsAffected, err := res.RowsAffected()
+		rowsAffected, rowErr := res.RowsAffected()
 
-		if err != nil {
+		if rowErr != nil {
 			srv.namedExec.TotalFailures.Inc()
 		} else {
 			srv.namedExec.TotalSuccess.Inc()
@@ -58,9 +58,9 @@ func (srv *PromSQLExec) ExecContext(ctx context.Context, Exec string, args ...in
 	if err != nil {
 		srv.namedExec.TotalFailures.Inc()
 	} else {
-		rowsAffected, err := res.RowsAffected()
+		rowsAffected, rowErr := res.RowsAffected()
 
-		if err != nil {
+		if rowErr != nil {
 			srv.namedExec.TotalFailures.Inc()
 		} else {
 			srv.namedExec.TotalSuccess.Inc()
