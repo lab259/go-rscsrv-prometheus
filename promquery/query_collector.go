@@ -63,7 +63,7 @@ func NewQueryCollector(opts *QueryCollectorOpts) *QueryCollector {
 		),
 		totalRowsAffected: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: fmt.Sprintf("db_%stotal_rows_affected", prefix),
+				Name: fmt.Sprintf("namedqry_%stotal_rows_affected", prefix),
 				Help: "The total number of rows affected by a query",
 			},
 			queryCollectorLabels,
