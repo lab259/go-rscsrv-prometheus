@@ -31,7 +31,6 @@ var _ = Describe("Driver Collector", func() {
 		db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(db.Ping()).ShouldNot(HaveOccurred())
-
 		defer db.Close()
 
 		_, err = db.Exec(`
@@ -73,6 +72,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			rs, err := db.Query("select name from users where id = 1")
 			Expect(err).ShouldNot(HaveOccurred())
@@ -92,6 +92,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			rs, err := db.Query("select name from users where id = 1")
 			Expect(err).ShouldNot(HaveOccurred())
@@ -120,6 +121,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			rs, err := db.Query("select name from users where id = 1")
 			Expect(err).ShouldNot(HaveOccurred())
@@ -139,6 +141,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			rs, err := db.Query("select name from users where id = 1")
 			Expect(err).ShouldNot(HaveOccurred())
@@ -167,6 +170,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			_, err = db.Query("wrong example query")
 			Expect(err).Should(HaveOccurred())
@@ -185,6 +189,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			_, err = db.Query("wrong example query")
 			Expect(err).Should(HaveOccurred())
@@ -211,6 +216,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			tx, err := db.Begin()
 			Expect(err).ShouldNot(HaveOccurred())
@@ -242,6 +248,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			// First transaction
 			tx, err := db.Begin()
@@ -286,6 +293,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			tx, err := db.Begin()
 			Expect(err).ShouldNot(HaveOccurred())
@@ -317,6 +325,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			// First transaction
 			tx, err := db.Begin()
@@ -361,6 +370,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			// First transaction
 			tx, err := db.Begin()
@@ -390,6 +400,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			// First transaction
 			tx, err := db.Begin()
@@ -435,6 +446,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			tx, err := db.Begin()
 			Expect(err).ShouldNot(HaveOccurred())
@@ -463,6 +475,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			// First transaction
 			tx, err := db.Begin()
@@ -504,6 +517,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			rs, err := db.Exec(`INSERT INTO users (id, name)
 				VALUES(2, 'LeBron James');`)
@@ -525,6 +539,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			rs, err := db.Exec(`INSERT INTO users (id, name)
 				VALUES(2, 'LeBron James');`)
@@ -557,6 +572,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			rs, err := db.Exec(`INSERT INTO users (id, name)
 				VALUES(2, 'LeBron James');`)
@@ -578,6 +594,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			rs, err := db.Exec(`INSERT INTO users (id, name)
 				VALUES(2, 'LeBron James');`)
@@ -608,6 +625,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			_, err = db.Exec(`INSERT INTO users (id, name)
 			VALUES(1, 'WRONG REPEATED USER');`)
@@ -627,6 +645,7 @@ var _ = Describe("Driver Collector", func() {
 			psqlInfo := fmt.Sprintf("user=postgres password=postgres dbname=pg-test sslmode=disable")
 			db, err := sql.Open(driverCollector.DriverName, psqlInfo)
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			_, err = db.Exec(`INSERT INTO users (id, name)
 				VALUES(1, 'WRONG REPEATED USER');`)

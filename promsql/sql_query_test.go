@@ -28,7 +28,6 @@ var _ = Describe("PromSQLQuery", func() {
 		db, err := sql.Open(dbDriverName, dbInfo)
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(db.Ping()).ShouldNot(HaveOccurred())
-
 		defer db.Close()
 
 		_, err = db.Exec(`
@@ -67,6 +66,7 @@ var _ = Describe("PromSQLQuery", func() {
 			db, err := sql.Open("postgres", dbInfo)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			promSQL := NewSQLQuery(usersNamedQuery, db)
 
@@ -89,6 +89,7 @@ var _ = Describe("PromSQLQuery", func() {
 			db, err := sql.Open("postgres", dbInfo)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			promSQL := NewSQLQuery(usersNamedQuery, db)
 
@@ -120,6 +121,7 @@ var _ = Describe("PromSQLQuery", func() {
 			db, err := sql.Open("postgres", dbInfo)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			promSQL := NewSQLQuery(usersNamedQuery, db)
 
@@ -142,6 +144,7 @@ var _ = Describe("PromSQLQuery", func() {
 			db, err := sql.Open("postgres", dbInfo)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
+			defer db.Close()
 
 			promSQL := NewSQLQuery(usersNamedQuery, db)
 
@@ -157,6 +160,578 @@ var _ = Describe("PromSQLQuery", func() {
 			Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
 			Expect(usersNamedQuery.TotalDuration.Write(&metric)).To(Succeed())
 			Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
+		})
+	})
+
+	When("using Exec", func() {
+		When("executing INSERT", func() {
+
+			var parentQueryCollector *promquery.QueryCollector
+			var usersNamedQuery *promquery.NamedQueryCollector
+			BeforeEach(func() {
+				parentQueryCollector = promquery.NewQueryCollector(&promquery.QueryCollectorOpts{})
+				usersNamedQuery = parentQueryCollector.NewNamedQuery("users")
+			})
+
+			It("should increase success to 1", func() {
+				db, err := sql.Open("postgres", dbInfo)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(db.Ping()).ShouldNot(HaveOccurred())
+				defer db.Close()
+
+				promSQL := NewSQLQuery(usersNamedQuery, db)
+
+				res, err := promSQL.Exec("insert into users (id, name) values (2, 'Marçal')")
+				Expect(err).ShouldNot(HaveOccurred())
+				rows, err := res.RowsAffected()
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(rows).To(BeEquivalentTo(1))
+
+				var metric dto.Metric
+				Expect(usersNamedQuery.TotalCalls.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedQuery.TotalSuccess.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedQuery.TotalFailures.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+				Expect(usersNamedQuery.TotalDuration.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
+				Expect(usersNamedQuery.TotalRowsAffected.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+			})
+
+			It("should increase failures to 1", func() {
+				db, err := sql.Open("postgres", dbInfo)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(db.Ping()).ShouldNot(HaveOccurred())
+				defer db.Close()
+
+				promSQL := NewSQLQuery(usersNamedQuery, db)
+
+				// inserting without id
+				_, err = promSQL.Exec("insert into users (name) values ('Fred')")
+				Expect(err).Should(HaveOccurred())
+
+				var metric dto.Metric
+				Expect(usersNamedQuery.TotalCalls.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedQuery.TotalSuccess.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+				Expect(usersNamedQuery.TotalFailures.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedQuery.TotalDuration.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
+				Expect(usersNamedQuery.TotalRowsAffected.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+			})
+
+			It("should increase rows affected to 2", func() {
+				db, err := sql.Open("postgres", dbInfo)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(db.Ping()).ShouldNot(HaveOccurred())
+				defer db.Close()
+
+				promSQL := NewSQLQuery(usersNamedQuery, db)
+
+				res, err := promSQL.Exec(`insert into users (id, name) values
+					 (2, 'Marçal'),
+					 (3, 'Beethoven')`)
+				Expect(err).ShouldNot(HaveOccurred())
+				rows, err := res.RowsAffected()
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(rows).To(BeEquivalentTo(2))
+
+				var metric dto.Metric
+				Expect(usersNamedQuery.TotalCalls.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedQuery.TotalSuccess.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedQuery.TotalFailures.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+				Expect(usersNamedQuery.TotalDuration.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
+				Expect(usersNamedQuery.TotalRowsAffected.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(2))
+			})
+		})
+
+		When("executing UPDATE", func() {
+
+			var parentQueryCollector *promquery.QueryCollector
+			var usersNamedExec *promquery.NamedQueryCollector
+			BeforeEach(func() {
+				parentQueryCollector = promquery.NewQueryCollector(&promquery.QueryCollectorOpts{})
+				usersNamedExec = parentQueryCollector.NewNamedQuery("users")
+			})
+
+			It("should increase success to 1", func() {
+				db, err := sql.Open("postgres", dbInfo)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(db.Ping()).ShouldNot(HaveOccurred())
+				defer db.Close()
+
+				promSQL := NewSQLQuery(usersNamedExec, db)
+
+				res, err := promSQL.Exec("update users set name = 'Charles' where id = 1")
+				Expect(err).ShouldNot(HaveOccurred())
+				rows, err := res.RowsAffected()
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(rows).To(BeEquivalentTo(1))
+
+				var metric dto.Metric
+				Expect(usersNamedExec.TotalCalls.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalSuccess.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalFailures.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+				Expect(usersNamedExec.TotalDuration.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
+				Expect(usersNamedExec.TotalRowsAffected.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+			})
+
+			It("should increase failures to 1", func() {
+				db, err := sql.Open("postgres", dbInfo)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(db.Ping()).ShouldNot(HaveOccurred())
+				defer db.Close()
+
+				promSQL := NewSQLQuery(usersNamedExec, db)
+
+				// Updating with wrong field
+				_, err = promSQL.Exec("update users set wrongfield = 'Ops' where id = 1")
+				Expect(err).Should(HaveOccurred())
+
+				var metric dto.Metric
+				Expect(usersNamedExec.TotalCalls.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalSuccess.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+				Expect(usersNamedExec.TotalFailures.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalDuration.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
+				Expect(usersNamedExec.TotalRowsAffected.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+			})
+
+			It("should increase rows affected to 2", func() {
+				db, err := sql.Open("postgres", dbInfo)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(db.Ping()).ShouldNot(HaveOccurred())
+				defer db.Close()
+
+				// Inserting data before update
+				_, err = db.Exec(`insert into users (id, name) values
+					 (2, 'Marçal'),
+					 (3, 'Beethoven')`)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				promSQL := NewSQLQuery(usersNamedExec, db)
+
+				res, err := promSQL.Exec(`update users
+					set name = 'New name'
+					where id = 2 or id = 3`)
+				Expect(err).ShouldNot(HaveOccurred())
+				rows, err := res.RowsAffected()
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(rows).To(BeEquivalentTo(2))
+
+				var metric dto.Metric
+				Expect(usersNamedExec.TotalCalls.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalSuccess.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalFailures.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+				Expect(usersNamedExec.TotalDuration.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
+				Expect(usersNamedExec.TotalRowsAffected.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(2))
+			})
+		})
+
+		When("executing DELETE", func() {
+
+			var parentQueryCollector *promquery.QueryCollector
+			var usersNamedExec *promquery.NamedQueryCollector
+			BeforeEach(func() {
+				parentQueryCollector = promquery.NewQueryCollector(&promquery.QueryCollectorOpts{})
+				usersNamedExec = parentQueryCollector.NewNamedQuery("users")
+			})
+
+			It("should increase success to 1", func() {
+				db, err := sql.Open("postgres", dbInfo)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(db.Ping()).ShouldNot(HaveOccurred())
+				defer db.Close()
+
+				promSQL := NewSQLQuery(usersNamedExec, db)
+
+				res, err := promSQL.Exec("delete from users where id = 1")
+				Expect(err).ShouldNot(HaveOccurred())
+				rows, err := res.RowsAffected()
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(rows).To(BeEquivalentTo(1))
+
+				var metric dto.Metric
+				Expect(usersNamedExec.TotalCalls.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalSuccess.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalFailures.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+				Expect(usersNamedExec.TotalDuration.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
+				Expect(usersNamedExec.TotalRowsAffected.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+			})
+
+			It("should increase failures to 1", func() {
+				db, err := sql.Open("postgres", dbInfo)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(db.Ping()).ShouldNot(HaveOccurred())
+				defer db.Close()
+
+				promSQL := NewSQLQuery(usersNamedExec, db)
+
+				// Deleting with wrong field
+				_, err = promSQL.Exec("delete from users where wrongfield = 1")
+				Expect(err).Should(HaveOccurred())
+
+				var metric dto.Metric
+				Expect(usersNamedExec.TotalCalls.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalSuccess.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+				Expect(usersNamedExec.TotalFailures.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalDuration.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
+				Expect(usersNamedExec.TotalRowsAffected.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+			})
+
+			It("should increase rows affected to 2", func() {
+				db, err := sql.Open("postgres", dbInfo)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(db.Ping()).ShouldNot(HaveOccurred())
+				defer db.Close()
+
+				// Inserting data before update
+				_, err = db.Exec(`insert into users (id, name) values
+					 (2, 'Marçal'),
+					 (3, 'Beethoven')`)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				promSQL := NewSQLQuery(usersNamedExec, db)
+
+				res, err := promSQL.Exec(`delete from users
+					where id = 2 or id = 3`)
+				Expect(err).ShouldNot(HaveOccurred())
+				rows, err := res.RowsAffected()
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(rows).To(BeEquivalentTo(2))
+
+				var metric dto.Metric
+				Expect(usersNamedExec.TotalCalls.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalSuccess.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalFailures.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+				Expect(usersNamedExec.TotalDuration.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
+				Expect(usersNamedExec.TotalRowsAffected.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(2))
+			})
+		})
+	})
+
+	When("using ExecContext", func() {
+		When("executing INSERT", func() {
+
+			var parentQueryCollector *promquery.QueryCollector
+			var usersNamedExec *promquery.NamedQueryCollector
+			BeforeEach(func() {
+				parentQueryCollector = promquery.NewQueryCollector(&promquery.QueryCollectorOpts{})
+				usersNamedExec = parentQueryCollector.NewNamedQuery("users")
+			})
+
+			It("should increase success to 1", func() {
+				db, err := sql.Open("postgres", dbInfo)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(db.Ping()).ShouldNot(HaveOccurred())
+				defer db.Close()
+
+				promSQL := NewSQLQuery(usersNamedExec, db)
+
+				res, err := promSQL.ExecContext(context.Background(), "insert into users (id, name) values (2, 'Marçal')")
+				Expect(err).ShouldNot(HaveOccurred())
+				rows, err := res.RowsAffected()
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(rows).To(BeEquivalentTo(1))
+
+				var metric dto.Metric
+				Expect(usersNamedExec.TotalCalls.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalSuccess.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalFailures.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+				Expect(usersNamedExec.TotalDuration.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
+				Expect(usersNamedExec.TotalRowsAffected.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+			})
+
+			It("should increase failures to 1", func() {
+				db, err := sql.Open("postgres", dbInfo)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(db.Ping()).ShouldNot(HaveOccurred())
+				defer db.Close()
+
+				promSQL := NewSQLQuery(usersNamedExec, db)
+
+				// inserting without id
+				_, err = promSQL.ExecContext(context.Background(), "insert into users (name) values ('Fred')")
+				Expect(err).Should(HaveOccurred())
+
+				var metric dto.Metric
+				Expect(usersNamedExec.TotalCalls.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalSuccess.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+				Expect(usersNamedExec.TotalFailures.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalDuration.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
+				Expect(usersNamedExec.TotalRowsAffected.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+			})
+
+			It("should increase rows affected to 2", func() {
+				db, err := sql.Open("postgres", dbInfo)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(db.Ping()).ShouldNot(HaveOccurred())
+				defer db.Close()
+
+				promSQL := NewSQLQuery(usersNamedExec, db)
+
+				res, err := promSQL.ExecContext(context.Background(), `insert into users (id, name) values
+					 (2, 'Marçal'),
+					 (3, 'Beethoven')`)
+				Expect(err).ShouldNot(HaveOccurred())
+				rows, err := res.RowsAffected()
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(rows).To(BeEquivalentTo(2))
+
+				var metric dto.Metric
+				Expect(usersNamedExec.TotalCalls.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalSuccess.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalFailures.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+				Expect(usersNamedExec.TotalDuration.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
+				Expect(usersNamedExec.TotalRowsAffected.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(2))
+			})
+		})
+
+		When("executing UPDATE", func() {
+
+			var parentQueryCollector *promquery.QueryCollector
+			var usersNamedExec *promquery.NamedQueryCollector
+			BeforeEach(func() {
+				parentQueryCollector = promquery.NewQueryCollector(&promquery.QueryCollectorOpts{})
+				usersNamedExec = parentQueryCollector.NewNamedQuery("users")
+			})
+
+			It("should increase success to 1", func() {
+				db, err := sql.Open("postgres", dbInfo)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(db.Ping()).ShouldNot(HaveOccurred())
+				defer db.Close()
+
+				promSQL := NewSQLQuery(usersNamedExec, db)
+
+				res, err := promSQL.ExecContext(context.Background(), "update users set name = 'Charles' where id = 1")
+				Expect(err).ShouldNot(HaveOccurred())
+				rows, err := res.RowsAffected()
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(rows).To(BeEquivalentTo(1))
+
+				var metric dto.Metric
+				Expect(usersNamedExec.TotalCalls.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalSuccess.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalFailures.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+				Expect(usersNamedExec.TotalDuration.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
+				Expect(usersNamedExec.TotalRowsAffected.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+			})
+
+			It("should increase failures to 1", func() {
+				db, err := sql.Open("postgres", dbInfo)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(db.Ping()).ShouldNot(HaveOccurred())
+				defer db.Close()
+
+				promSQL := NewSQLQuery(usersNamedExec, db)
+
+				// Updating with wrong field
+				_, err = promSQL.ExecContext(context.Background(), "update users set wrongfield = 'Ops' where id = 1")
+				Expect(err).Should(HaveOccurred())
+
+				var metric dto.Metric
+				Expect(usersNamedExec.TotalCalls.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalSuccess.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+				Expect(usersNamedExec.TotalFailures.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalDuration.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
+				Expect(usersNamedExec.TotalRowsAffected.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+			})
+
+			It("should increase rows affected to 2", func() {
+				db, err := sql.Open("postgres", dbInfo)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(db.Ping()).ShouldNot(HaveOccurred())
+				defer db.Close()
+
+				// Inserting data before update
+				_, err = db.Exec(`insert into users (id, name) values
+					 (2, 'Marçal'),
+					 (3, 'Beethoven')`)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				promSQL := NewSQLQuery(usersNamedExec, db)
+
+				res, err := promSQL.ExecContext(context.Background(), `update users
+					set name = 'New name'
+					where id = 2 or id = 3`)
+				Expect(err).ShouldNot(HaveOccurred())
+				rows, err := res.RowsAffected()
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(rows).To(BeEquivalentTo(2))
+
+				var metric dto.Metric
+				Expect(usersNamedExec.TotalCalls.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalSuccess.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalFailures.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+				Expect(usersNamedExec.TotalDuration.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
+				Expect(usersNamedExec.TotalRowsAffected.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(2))
+			})
+		})
+
+		When("executing DELETE", func() {
+
+			var parentQueryCollector *promquery.QueryCollector
+			var usersNamedExec *promquery.NamedQueryCollector
+			BeforeEach(func() {
+				parentQueryCollector = promquery.NewQueryCollector(&promquery.QueryCollectorOpts{})
+				usersNamedExec = parentQueryCollector.NewNamedQuery("users")
+			})
+
+			It("should increase success to 1", func() {
+				db, err := sql.Open("postgres", dbInfo)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(db.Ping()).ShouldNot(HaveOccurred())
+				defer db.Close()
+
+				promSQL := NewSQLQuery(usersNamedExec, db)
+
+				res, err := promSQL.ExecContext(context.Background(), "delete from users where id = 1")
+				Expect(err).ShouldNot(HaveOccurred())
+				rows, err := res.RowsAffected()
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(rows).To(BeEquivalentTo(1))
+
+				var metric dto.Metric
+				Expect(usersNamedExec.TotalCalls.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalSuccess.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalFailures.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+				Expect(usersNamedExec.TotalDuration.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
+				Expect(usersNamedExec.TotalRowsAffected.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+			})
+
+			It("should increase failures to 1", func() {
+				db, err := sql.Open("postgres", dbInfo)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(db.Ping()).ShouldNot(HaveOccurred())
+				defer db.Close()
+
+				promSQL := NewSQLQuery(usersNamedExec, db)
+
+				// Deleting with wrong field
+				_, err = promSQL.ExecContext(context.Background(), "delete from users where wrongfield = 1")
+				Expect(err).Should(HaveOccurred())
+
+				var metric dto.Metric
+				Expect(usersNamedExec.TotalCalls.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalSuccess.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+				Expect(usersNamedExec.TotalFailures.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalDuration.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
+				Expect(usersNamedExec.TotalRowsAffected.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+			})
+
+			It("should increase rows affected to 2", func() {
+				db, err := sql.Open("postgres", dbInfo)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(db.Ping()).ShouldNot(HaveOccurred())
+				defer db.Close()
+
+				// Inserting data before update
+				_, err = db.Exec(`insert into users (id, name) values
+					 (2, 'Marçal'),
+					 (3, 'Beethoven')`)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				promSQL := NewSQLQuery(usersNamedExec, db)
+
+				res, err := promSQL.ExecContext(context.Background(), `delete from users
+					where id = 2 or id = 3`)
+				Expect(err).ShouldNot(HaveOccurred())
+				rows, err := res.RowsAffected()
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(rows).To(BeEquivalentTo(2))
+
+				var metric dto.Metric
+				Expect(usersNamedExec.TotalCalls.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalSuccess.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(1))
+				Expect(usersNamedExec.TotalFailures.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(0))
+				Expect(usersNamedExec.TotalDuration.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
+				Expect(usersNamedExec.TotalRowsAffected.Write(&metric)).To(Succeed())
+				Expect(metric.GetCounter().GetValue()).To(BeEquivalentTo(2))
+			})
 		})
 	})
 })

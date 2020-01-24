@@ -9,10 +9,11 @@ import (
 
 // QueryCollector is responsible for concentrate all metrics avaiable
 type QueryCollector struct {
-	totalCalls    *prometheus.CounterVec
-	totalDuration *prometheus.CounterVec
-	totalSuccess  *prometheus.CounterVec
-	totalFailures *prometheus.CounterVec
+	totalCalls        *prometheus.CounterVec
+	totalDuration     *prometheus.CounterVec
+	totalSuccess      *prometheus.CounterVec
+	totalFailures     *prometheus.CounterVec
+	totalRowsAffected *prometheus.CounterVec
 }
 
 // QueryCollectorOpts is the input option for QueryCollector
@@ -60,18 +61,26 @@ func NewQueryCollector(opts *QueryCollectorOpts) *QueryCollector {
 			},
 			queryCollectorLabels,
 		),
+		totalRowsAffected: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: fmt.Sprintf("namedqry_%stotal_rows_affected", prefix),
+				Help: "The total number of rows affected by a query",
+			},
+			queryCollectorLabels,
+		),
 	}
 }
 
 // NewNamedQuery returns a new NamedQueryCollector pointer
 func (collector *QueryCollector) NewNamedQuery(name string) *NamedQueryCollector {
 	return &NamedQueryCollector{
-		parent:        collector,
-		name:          name,
-		TotalCalls:    collector.totalCalls.WithLabelValues(name),
-		TotalDuration: collector.totalDuration.WithLabelValues(name),
-		TotalSuccess:  collector.totalSuccess.WithLabelValues(name),
-		TotalFailures: collector.totalFailures.WithLabelValues(name),
+		parent:            collector,
+		name:              name,
+		TotalCalls:        collector.totalCalls.WithLabelValues(name),
+		TotalDuration:     collector.totalDuration.WithLabelValues(name),
+		TotalSuccess:      collector.totalSuccess.WithLabelValues(name),
+		TotalFailures:     collector.totalFailures.WithLabelValues(name),
+		TotalRowsAffected: collector.totalRowsAffected.WithLabelValues(name),
 	}
 }
 
@@ -101,6 +110,7 @@ func (collector *QueryCollector) Describe(ch chan<- *prometheus.Desc) {
 	collector.totalDuration.Describe(ch)
 	collector.totalSuccess.Describe(ch)
 	collector.totalFailures.Describe(ch)
+	collector.totalRowsAffected.Describe(ch)
 }
 
 // Collect is called by the Prometheus registry when collecting
@@ -120,4 +130,5 @@ func (collector *QueryCollector) Collect(metrics chan<- prometheus.Metric) {
 	collector.totalDuration.Collect(metrics)
 	collector.totalSuccess.Collect(metrics)
 	collector.totalFailures.Collect(metrics)
+	collector.totalRowsAffected.Collect(metrics)
 }

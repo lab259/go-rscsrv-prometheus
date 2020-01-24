@@ -66,24 +66,65 @@ func main() {
 			panic(err)
 		}
 
-		usersQuery := services.DefaultQueryCollectorService.NewNamedQuery("users")
+		usersQuery := services.DefaultQueryCollectorService.NewNamedQuery("users_query")
+		usersInsert := services.DefaultQueryCollectorService.NewNamedQuery("users_insert")
+		usersDelete := services.DefaultQueryCollectorService.NewNamedQuery("users_delete")
 
-		usersSQL := promsql.NewSQLQuery(usersQuery, db)
+		usersQuerySQL := promsql.NewSQLQuery(usersQuery, db)
+		usersInsertSQL := promsql.NewSQLQuery(usersInsert, db)
+		usersDeleteSQL := promsql.NewSQLQuery(usersDelete, db)
+
+		var lastInsertedID int64 = 1
+		var lastDeletedID int64 = 1
 
 		for {
 			time.Sleep(3 * time.Second)
 			opt := rand.Intn(100)
 
-			if opt <= 50 {
+			if opt <= 25 {
 				log.Println("Executing correct query")
-				_, err := usersSQL.Query("select name from users")
+				_, err := usersQuerySQL.Query("select name from users")
 				if err != nil {
 					panic(err)
 				}
 
-			} else {
+			} else if opt <= 50 {
+
 				log.Println("Executing failing query")
-				usersSQL.Query("wrong query")
+				usersQuerySQL.Query("wrong query")
+
+			} else if opt <= 75 {
+
+				log.Println("Executing insert")
+				cmd := fmt.Sprintf("insert into users (id, name) values ( %d, 'John' )", lastInsertedID)
+				log.Println("CMD: ", cmd)
+				res, err := usersInsertSQL.Exec(cmd)
+				if err != nil {
+					log.Println("Inserting ", lastInsertedID, " with error", err)
+				}
+				row, err := res.RowsAffected()
+				if err != nil {
+					log.Println("error recovering rows affected ", err)
+				} else {
+					log.Println("Row affected ", row)
+				}
+				lastInsertedID++
+
+			} else {
+				log.Println("Executing delete")
+				cmd := fmt.Sprintf("delete from users where id = %d", lastDeletedID)
+				log.Println("CMD: ", cmd)
+				res, err := usersDeleteSQL.Exec(cmd)
+				if err != nil {
+					log.Println("Deleting ", lastDeletedID, " with error", err)
+				}
+				row, err := res.RowsAffected()
+				if err != nil {
+					log.Println("error recovering rows affected ", err)
+				} else {
+					log.Println("Row affected ", row)
+				}
+				lastDeletedID++
 			}
 		}
 	}()

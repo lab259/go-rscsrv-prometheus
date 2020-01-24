@@ -5,10 +5,11 @@ import (
 )
 
 type NamedQueryCollector struct {
-	parent        *QueryCollector
-	name          string
-	TotalCalls    prometheus.Counter
-	TotalDuration prometheus.Counter
-	TotalSuccess  prometheus.Counter
-	TotalFailures prometheus.Counter
+	parent            *QueryCollector
+	name              string
+	TotalCalls        prometheus.Counter
+	TotalDuration     prometheus.Counter
+	TotalSuccess      prometheus.Counter
+	TotalFailures     prometheus.Counter
+	TotalRowsAffected prometheus.Counter
 }
