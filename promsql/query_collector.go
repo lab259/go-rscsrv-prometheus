@@ -13,7 +13,7 @@ import (
 type QueryCollector struct {
 	totalCalls        *prometheus.CounterVec
 	totalDuration     *prometheus.CounterVec
-	totalSuccess      *prometheus.CounterVec
+	totalSuccesses    *prometheus.CounterVec
 	totalFailures     *prometheus.CounterVec
 	totalRowsAffected *prometheus.CounterVec
 }
@@ -48,14 +48,14 @@ func NewQueryCollector(opts *QueryCollectorOpts) *QueryCollector {
 		),
 		totalDuration: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: fmt.Sprintf("namedqry_%stotal_duration", prefix),
+				Name: fmt.Sprintf("namedqry_%stotal_duration_seconds", prefix),
 				Help: "The total duration (in seconds) from a query processed",
 			},
 			queryCollectorLabels,
 		),
-		totalSuccess: prometheus.NewCounterVec(
+		totalSuccesses: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: fmt.Sprintf("namedqry_%stotal_success", prefix),
+				Name: fmt.Sprintf("namedqry_%stotal_successes", prefix),
 				Help: "The total number of a query processed with success",
 			},
 			queryCollectorLabels,
@@ -85,7 +85,7 @@ func (collector *QueryCollector) NewNamedQuery(name string) *NamedQuery {
 		name:              name,
 		TotalCalls:        collector.totalCalls.WithLabelValues(name),
 		TotalDuration:     collector.totalDuration.WithLabelValues(name),
-		TotalSuccess:      collector.totalSuccess.WithLabelValues(name),
+		TotalSuccess:      collector.totalSuccesses.WithLabelValues(name),
 		TotalFailures:     collector.totalFailures.WithLabelValues(name),
 		TotalRowsAffected: collector.totalRowsAffected.WithLabelValues(name),
 	}
@@ -115,7 +115,7 @@ func (collector *QueryCollector) NamedQuery(name string) QueryHandler {
 func (collector *QueryCollector) Describe(ch chan<- *prometheus.Desc) {
 	collector.totalCalls.Describe(ch)
 	collector.totalDuration.Describe(ch)
-	collector.totalSuccess.Describe(ch)
+	collector.totalSuccesses.Describe(ch)
 	collector.totalFailures.Describe(ch)
 	collector.totalRowsAffected.Describe(ch)
 }
@@ -124,7 +124,7 @@ func (collector *QueryCollector) Describe(ch chan<- *prometheus.Desc) {
 func (collector *QueryCollector) Collect(metrics chan<- prometheus.Metric) {
 	collector.totalCalls.Collect(metrics)
 	collector.totalDuration.Collect(metrics)
-	collector.totalSuccess.Collect(metrics)
+	collector.totalSuccesses.Collect(metrics)
 	collector.totalFailures.Collect(metrics)
 	collector.totalRowsAffected.Collect(metrics)
 }
