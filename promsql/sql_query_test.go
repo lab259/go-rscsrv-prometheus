@@ -11,7 +11,6 @@ import (
 	dto "github.com/prometheus/client_model/go"
 
 	"github.com/lab259/go-rscsrv-prometheus/ginkgotest"
-	"github.com/lab259/go-rscsrv-prometheus/promquery"
 	_ "github.com/lib/pq"
 )
 
@@ -55,10 +54,10 @@ var _ = Describe("PromSQLQuery", func() {
 
 	When("using Query", func() {
 
-		var parentQueryCollector *promquery.QueryCollector
-		var usersNamedQuery *promquery.NamedQueryCollector
+		var parentQueryCollector *QueryCollector
+		var usersNamedQuery *NamedQuery
 		BeforeEach(func() {
-			parentQueryCollector = promquery.NewQueryCollector(&promquery.QueryCollectorOpts{})
+			parentQueryCollector = NewQueryCollector(&QueryCollectorOpts{})
 			usersNamedQuery = parentQueryCollector.NewNamedQuery("users")
 		})
 
@@ -68,7 +67,7 @@ var _ = Describe("PromSQLQuery", func() {
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
 			defer db.Close()
 
-			promSQL := NewSQLQuery(usersNamedQuery, db)
+			promSQL := NewQuery(usersNamedQuery, db)
 
 			rows, err := promSQL.Query("select name from users where id = 1")
 			Expect(err).ShouldNot(HaveOccurred())
@@ -91,7 +90,7 @@ var _ = Describe("PromSQLQuery", func() {
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
 			defer db.Close()
 
-			promSQL := NewSQLQuery(usersNamedQuery, db)
+			promSQL := NewQuery(usersNamedQuery, db)
 
 			_, err = promSQL.Query("wrong query")
 			Expect(err).Should(HaveOccurred())
@@ -110,10 +109,10 @@ var _ = Describe("PromSQLQuery", func() {
 
 	When("using QueryContext", func() {
 
-		var parentQueryCollector *promquery.QueryCollector
-		var usersNamedQuery *promquery.NamedQueryCollector
+		var parentQueryCollector *QueryCollector
+		var usersNamedQuery *NamedQuery
 		BeforeEach(func() {
-			parentQueryCollector = promquery.NewQueryCollector(&promquery.QueryCollectorOpts{})
+			parentQueryCollector = NewQueryCollector(&QueryCollectorOpts{})
 			usersNamedQuery = parentQueryCollector.NewNamedQuery("users")
 		})
 
@@ -123,7 +122,7 @@ var _ = Describe("PromSQLQuery", func() {
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
 			defer db.Close()
 
-			promSQL := NewSQLQuery(usersNamedQuery, db)
+			promSQL := NewQuery(usersNamedQuery, db)
 
 			rows, err := promSQL.QueryContext(context.Background(), "select name from users where id = 1")
 			Expect(err).ShouldNot(HaveOccurred())
@@ -146,7 +145,7 @@ var _ = Describe("PromSQLQuery", func() {
 			Expect(db.Ping()).ShouldNot(HaveOccurred())
 			defer db.Close()
 
-			promSQL := NewSQLQuery(usersNamedQuery, db)
+			promSQL := NewQuery(usersNamedQuery, db)
 
 			_, err = promSQL.QueryContext(context.Background(), "wrong query")
 			Expect(err).Should(HaveOccurred())
@@ -166,11 +165,14 @@ var _ = Describe("PromSQLQuery", func() {
 	When("using Exec", func() {
 		When("executing INSERT", func() {
 
-			var parentQueryCollector *promquery.QueryCollector
-			var usersNamedQuery *promquery.NamedQueryCollector
+			var parentQueryCollector *QueryCollector
+			var usersNamedQuery *NamedQuery
+			var usersNamedQueryProxy QueryHandler
+
 			BeforeEach(func() {
-				parentQueryCollector = promquery.NewQueryCollector(&promquery.QueryCollectorOpts{})
+				parentQueryCollector = NewQueryCollector(&QueryCollectorOpts{})
 				usersNamedQuery = parentQueryCollector.NewNamedQuery("users")
+				usersNamedQueryProxy = parentQueryCollector.NamedQuery("users")
 			})
 
 			It("should increase success to 1", func() {
@@ -179,7 +181,7 @@ var _ = Describe("PromSQLQuery", func() {
 				Expect(db.Ping()).ShouldNot(HaveOccurred())
 				defer db.Close()
 
-				promSQL := NewSQLQuery(usersNamedQuery, db)
+				promSQL := usersNamedQueryProxy(db)
 
 				res, err := promSQL.Exec("insert into users (id, name) values (2, 'Marçal')")
 				Expect(err).ShouldNot(HaveOccurred())
@@ -206,7 +208,7 @@ var _ = Describe("PromSQLQuery", func() {
 				Expect(db.Ping()).ShouldNot(HaveOccurred())
 				defer db.Close()
 
-				promSQL := NewSQLQuery(usersNamedQuery, db)
+				promSQL := NewQuery(usersNamedQuery, db)
 
 				// inserting without id
 				_, err = promSQL.Exec("insert into users (name) values ('Fred')")
@@ -231,7 +233,7 @@ var _ = Describe("PromSQLQuery", func() {
 				Expect(db.Ping()).ShouldNot(HaveOccurred())
 				defer db.Close()
 
-				promSQL := NewSQLQuery(usersNamedQuery, db)
+				promSQL := NewQuery(usersNamedQuery, db)
 
 				res, err := promSQL.Exec(`insert into users (id, name) values
 					 (2, 'Marçal'),
@@ -257,10 +259,10 @@ var _ = Describe("PromSQLQuery", func() {
 
 		When("executing UPDATE", func() {
 
-			var parentQueryCollector *promquery.QueryCollector
-			var usersNamedExec *promquery.NamedQueryCollector
+			var parentQueryCollector *QueryCollector
+			var usersNamedExec *NamedQuery
 			BeforeEach(func() {
-				parentQueryCollector = promquery.NewQueryCollector(&promquery.QueryCollectorOpts{})
+				parentQueryCollector = NewQueryCollector(&QueryCollectorOpts{})
 				usersNamedExec = parentQueryCollector.NewNamedQuery("users")
 			})
 
@@ -270,7 +272,7 @@ var _ = Describe("PromSQLQuery", func() {
 				Expect(db.Ping()).ShouldNot(HaveOccurred())
 				defer db.Close()
 
-				promSQL := NewSQLQuery(usersNamedExec, db)
+				promSQL := NewQuery(usersNamedExec, db)
 
 				res, err := promSQL.Exec("update users set name = 'Charles' where id = 1")
 				Expect(err).ShouldNot(HaveOccurred())
@@ -297,7 +299,7 @@ var _ = Describe("PromSQLQuery", func() {
 				Expect(db.Ping()).ShouldNot(HaveOccurred())
 				defer db.Close()
 
-				promSQL := NewSQLQuery(usersNamedExec, db)
+				promSQL := NewQuery(usersNamedExec, db)
 
 				// Updating with wrong field
 				_, err = promSQL.Exec("update users set wrongfield = 'Ops' where id = 1")
@@ -328,7 +330,7 @@ var _ = Describe("PromSQLQuery", func() {
 					 (3, 'Beethoven')`)
 				Expect(err).ShouldNot(HaveOccurred())
 
-				promSQL := NewSQLQuery(usersNamedExec, db)
+				promSQL := NewQuery(usersNamedExec, db)
 
 				res, err := promSQL.Exec(`update users
 					set name = 'New name'
@@ -354,10 +356,10 @@ var _ = Describe("PromSQLQuery", func() {
 
 		When("executing DELETE", func() {
 
-			var parentQueryCollector *promquery.QueryCollector
-			var usersNamedExec *promquery.NamedQueryCollector
+			var parentQueryCollector *QueryCollector
+			var usersNamedExec *NamedQuery
 			BeforeEach(func() {
-				parentQueryCollector = promquery.NewQueryCollector(&promquery.QueryCollectorOpts{})
+				parentQueryCollector = NewQueryCollector(&QueryCollectorOpts{})
 				usersNamedExec = parentQueryCollector.NewNamedQuery("users")
 			})
 
@@ -367,7 +369,7 @@ var _ = Describe("PromSQLQuery", func() {
 				Expect(db.Ping()).ShouldNot(HaveOccurred())
 				defer db.Close()
 
-				promSQL := NewSQLQuery(usersNamedExec, db)
+				promSQL := NewQuery(usersNamedExec, db)
 
 				res, err := promSQL.Exec("delete from users where id = 1")
 				Expect(err).ShouldNot(HaveOccurred())
@@ -394,7 +396,7 @@ var _ = Describe("PromSQLQuery", func() {
 				Expect(db.Ping()).ShouldNot(HaveOccurred())
 				defer db.Close()
 
-				promSQL := NewSQLQuery(usersNamedExec, db)
+				promSQL := NewQuery(usersNamedExec, db)
 
 				// Deleting with wrong field
 				_, err = promSQL.Exec("delete from users where wrongfield = 1")
@@ -425,7 +427,7 @@ var _ = Describe("PromSQLQuery", func() {
 					 (3, 'Beethoven')`)
 				Expect(err).ShouldNot(HaveOccurred())
 
-				promSQL := NewSQLQuery(usersNamedExec, db)
+				promSQL := NewQuery(usersNamedExec, db)
 
 				res, err := promSQL.Exec(`delete from users
 					where id = 2 or id = 3`)
@@ -452,10 +454,10 @@ var _ = Describe("PromSQLQuery", func() {
 	When("using ExecContext", func() {
 		When("executing INSERT", func() {
 
-			var parentQueryCollector *promquery.QueryCollector
-			var usersNamedExec *promquery.NamedQueryCollector
+			var parentQueryCollector *QueryCollector
+			var usersNamedExec *NamedQuery
 			BeforeEach(func() {
-				parentQueryCollector = promquery.NewQueryCollector(&promquery.QueryCollectorOpts{})
+				parentQueryCollector = NewQueryCollector(&QueryCollectorOpts{})
 				usersNamedExec = parentQueryCollector.NewNamedQuery("users")
 			})
 
@@ -465,7 +467,7 @@ var _ = Describe("PromSQLQuery", func() {
 				Expect(db.Ping()).ShouldNot(HaveOccurred())
 				defer db.Close()
 
-				promSQL := NewSQLQuery(usersNamedExec, db)
+				promSQL := NewQuery(usersNamedExec, db)
 
 				res, err := promSQL.ExecContext(context.Background(), "insert into users (id, name) values (2, 'Marçal')")
 				Expect(err).ShouldNot(HaveOccurred())
@@ -492,7 +494,7 @@ var _ = Describe("PromSQLQuery", func() {
 				Expect(db.Ping()).ShouldNot(HaveOccurred())
 				defer db.Close()
 
-				promSQL := NewSQLQuery(usersNamedExec, db)
+				promSQL := NewQuery(usersNamedExec, db)
 
 				// inserting without id
 				_, err = promSQL.ExecContext(context.Background(), "insert into users (name) values ('Fred')")
@@ -517,7 +519,7 @@ var _ = Describe("PromSQLQuery", func() {
 				Expect(db.Ping()).ShouldNot(HaveOccurred())
 				defer db.Close()
 
-				promSQL := NewSQLQuery(usersNamedExec, db)
+				promSQL := NewQuery(usersNamedExec, db)
 
 				res, err := promSQL.ExecContext(context.Background(), `insert into users (id, name) values
 					 (2, 'Marçal'),
@@ -543,10 +545,10 @@ var _ = Describe("PromSQLQuery", func() {
 
 		When("executing UPDATE", func() {
 
-			var parentQueryCollector *promquery.QueryCollector
-			var usersNamedExec *promquery.NamedQueryCollector
+			var parentQueryCollector *QueryCollector
+			var usersNamedExec *NamedQuery
 			BeforeEach(func() {
-				parentQueryCollector = promquery.NewQueryCollector(&promquery.QueryCollectorOpts{})
+				parentQueryCollector = NewQueryCollector(&QueryCollectorOpts{})
 				usersNamedExec = parentQueryCollector.NewNamedQuery("users")
 			})
 
@@ -556,7 +558,7 @@ var _ = Describe("PromSQLQuery", func() {
 				Expect(db.Ping()).ShouldNot(HaveOccurred())
 				defer db.Close()
 
-				promSQL := NewSQLQuery(usersNamedExec, db)
+				promSQL := NewQuery(usersNamedExec, db)
 
 				res, err := promSQL.ExecContext(context.Background(), "update users set name = 'Charles' where id = 1")
 				Expect(err).ShouldNot(HaveOccurred())
@@ -583,7 +585,7 @@ var _ = Describe("PromSQLQuery", func() {
 				Expect(db.Ping()).ShouldNot(HaveOccurred())
 				defer db.Close()
 
-				promSQL := NewSQLQuery(usersNamedExec, db)
+				promSQL := NewQuery(usersNamedExec, db)
 
 				// Updating with wrong field
 				_, err = promSQL.ExecContext(context.Background(), "update users set wrongfield = 'Ops' where id = 1")
@@ -614,7 +616,7 @@ var _ = Describe("PromSQLQuery", func() {
 					 (3, 'Beethoven')`)
 				Expect(err).ShouldNot(HaveOccurred())
 
-				promSQL := NewSQLQuery(usersNamedExec, db)
+				promSQL := NewQuery(usersNamedExec, db)
 
 				res, err := promSQL.ExecContext(context.Background(), `update users
 					set name = 'New name'
@@ -640,10 +642,10 @@ var _ = Describe("PromSQLQuery", func() {
 
 		When("executing DELETE", func() {
 
-			var parentQueryCollector *promquery.QueryCollector
-			var usersNamedExec *promquery.NamedQueryCollector
+			var parentQueryCollector *QueryCollector
+			var usersNamedExec *NamedQuery
 			BeforeEach(func() {
-				parentQueryCollector = promquery.NewQueryCollector(&promquery.QueryCollectorOpts{})
+				parentQueryCollector = NewQueryCollector(&QueryCollectorOpts{})
 				usersNamedExec = parentQueryCollector.NewNamedQuery("users")
 			})
 
@@ -653,7 +655,7 @@ var _ = Describe("PromSQLQuery", func() {
 				Expect(db.Ping()).ShouldNot(HaveOccurred())
 				defer db.Close()
 
-				promSQL := NewSQLQuery(usersNamedExec, db)
+				promSQL := NewQuery(usersNamedExec, db)
 
 				res, err := promSQL.ExecContext(context.Background(), "delete from users where id = 1")
 				Expect(err).ShouldNot(HaveOccurred())
@@ -680,7 +682,7 @@ var _ = Describe("PromSQLQuery", func() {
 				Expect(db.Ping()).ShouldNot(HaveOccurred())
 				defer db.Close()
 
-				promSQL := NewSQLQuery(usersNamedExec, db)
+				promSQL := NewQuery(usersNamedExec, db)
 
 				// Deleting with wrong field
 				_, err = promSQL.ExecContext(context.Background(), "delete from users where wrongfield = 1")
@@ -711,7 +713,7 @@ var _ = Describe("PromSQLQuery", func() {
 					 (3, 'Beethoven')`)
 				Expect(err).ShouldNot(HaveOccurred())
 
-				promSQL := NewSQLQuery(usersNamedExec, db)
+				promSQL := NewQuery(usersNamedExec, db)
 
 				res, err := promSQL.ExecContext(context.Background(), `delete from users
 					where id = 2 or id = 3`)

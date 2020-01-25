@@ -1,4 +1,4 @@
-package promquery
+package promsql
 
 import (
 	"fmt"
@@ -7,7 +7,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// QueryCollector is responsible for concentrate all metrics avaiable
+// QueryCollector is the collector responsible to initialize and control all
+// available metrics. Those metrics are reused by `NamedQuery` with the query
+// name as a label value.
 type QueryCollector struct {
 	totalCalls        *prometheus.CounterVec
 	totalDuration     *prometheus.CounterVec
@@ -16,7 +18,11 @@ type QueryCollector struct {
 	totalRowsAffected *prometheus.CounterVec
 }
 
-// QueryCollectorOpts is the input option for QueryCollector
+// QueryHandler is returned by the `QueryCollector.NamedQuery` helper method for
+// returning the `Query` proxy instance.
+type QueryHandler func(DBQueryProxy) *Query
+
+// QueryCollectorOpts is the input option for QueryCollector.
 type QueryCollectorOpts struct {
 	// Prefix: responsible for all counters descs prefix
 	Prefix string
@@ -71,9 +77,10 @@ func NewQueryCollector(opts *QueryCollectorOpts) *QueryCollector {
 	}
 }
 
-// NewNamedQuery returns a new NamedQueryCollector pointer
-func (collector *QueryCollector) NewNamedQuery(name string) *NamedQueryCollector {
-	return &NamedQueryCollector{
+// NewNamedQuery returns a new instance of `NamedQuery` with its metrics
+// initalized with the query name as a label.
+func (collector *QueryCollector) NewNamedQuery(name string) *NamedQuery {
+	return &NamedQuery{
 		parent:            collector,
 		name:              name,
 		TotalCalls:        collector.totalCalls.WithLabelValues(name),
@@ -84,27 +91,27 @@ func (collector *QueryCollector) NewNamedQuery(name string) *NamedQueryCollector
 	}
 }
 
-// Describe sends the super-set of all possible descriptors of metrics
-// collected by this Collector to the provided channel and returns once
-// the last descriptor has been sent. The sent descriptors fulfill the
-// consistency and uniqueness requirements described in the Desc
-// documentation.
+// NamedQuery creates internally a `NamedQuery` and then returns a 2nd order
+// function that uses the NamedQuery to create mew `Query` instances.
 //
-// It is valid if one and the same Collector sends duplicate
-// descriptors. Those duplicates are simply ignored. However, two
-// different Collectors must not send duplicate descriptors.
+// Example:
 //
-// Sending no descriptor at all marks the Collector as “unchecked”,
-// i.e. no checks will be performed at registration time, and the
-// Collector may yield any Metric it sees fit in its Collect method.
+// ```
+// nqFUH := qryCollector.NamedQuery("fetch_users_history")
+// // ...
+// rs, err := nqFUH(db).Query("SELECT id, ... FROM  ... INNER JOIN ... INNER JOIN ... WHERE ...")
+// ```
 //
-// This method idempotently sends the same descriptors throughout the
-// lifetime of the Collector. It may be called concurrently and
-// therefore must be implemented in a concurrency safe way.
-//
-// If a Collector encounters an error while executing this method, it
-// must send an invalid descriptor (created with NewInvalidDesc) to
-// signal the error to the registry.
+// In the example above, a new `Query` is created everytime `nqFUH` is
+// called. Also, a `sql.TX` can be used instead of using a `sql.DB` reference.
+func (collector *QueryCollector) NamedQuery(name string) QueryHandler {
+	nqry := collector.NewNamedQuery(name)
+	return func(db DBQueryProxy) *Query {
+		return NewQuery(nqry, db)
+	}
+}
+
+// Describe forwards all descriptions to the metrics.
 func (collector *QueryCollector) Describe(ch chan<- *prometheus.Desc) {
 	collector.totalCalls.Describe(ch)
 	collector.totalDuration.Describe(ch)
@@ -113,18 +120,7 @@ func (collector *QueryCollector) Describe(ch chan<- *prometheus.Desc) {
 	collector.totalRowsAffected.Describe(ch)
 }
 
-// Collect is called by the Prometheus registry when collecting
-// metrics. The implementation sends each collected metric via the
-// provided channel and returns once the last metric has been sent. The
-// descriptor of each sent metric is one of those returned by Describe
-// (unless the Collector is unchecked, see above). Returned metrics that
-// share the same descriptor must differ in their variable label
-// values.
-//
-// This method may be called concurrently and must therefore be
-// implemented in a concurrency safe way. Blocking occurs at the expense
-// of total performance of rendering all registered metrics. Ideally,
-// Collector implementations support concurrent readers.
+// Collect forwards all collect calls to all metrics.
 func (collector *QueryCollector) Collect(metrics chan<- prometheus.Metric) {
 	collector.totalCalls.Collect(metrics)
 	collector.totalDuration.Collect(metrics)

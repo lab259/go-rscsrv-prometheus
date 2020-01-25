@@ -50,48 +50,61 @@ func (b blockingCollector) Collect(ch chan<- prometheus.Metric) {
 
 var _ = Describe("Handler", func() {
 	When("using custom error handling", func() {
-		// Create a registry that collects a MetricFamily with two elements,
-		// another with one, and reports an error. Further down, we'll use the
-		// same registry in the HandlerOpts.
-		reg := prometheus.NewRegistry()
 
-		cnt := prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "the_count",
-			Help: "Ah-ah-ah! Thunder and lightning!",
-		})
-		reg.MustRegister(cnt)
-
-		cntVec := prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name:        "name",
-				Help:        "docstring",
-				ConstLabels: prometheus.Labels{"constname": "constvalue"},
-			},
-			[]string{"labelname"},
+		var (
+			reg             *prometheus.Registry
+			cnt             prometheus.Counter
+			cntVec          *prometheus.CounterVec
+			logBuf          *bytes.Buffer
+			errorHandler    fasthttp.RequestHandler
+			continueHandler fasthttp.RequestHandler
+			panicHandler    fasthttp.RequestHandler
 		)
-		cntVec.WithLabelValues("val1").Inc()
-		cntVec.WithLabelValues("val2").Inc()
-		reg.MustRegister(cntVec)
 
-		reg.MustRegister(errorCollector{})
+		BeforeEach(func() {
+			// Create a registry that collects a MetricFamily with two elements,
+			// another with one, and reports an error. Further down, we'll use the
+			// same registry in the HandlerOpts.
+			reg = prometheus.NewRegistry()
 
-		logBuf := &bytes.Buffer{}
-		logger := log.New(logBuf, "", 0)
+			cnt = prometheus.NewCounter(prometheus.CounterOpts{
+				Name: "the_count",
+				Help: "Ah-ah-ah! Thunder and lightning!",
+			})
+			reg.MustRegister(cnt)
 
-		errorHandler := HandlerFor(reg, HandlerOpts{
-			ErrorLog:      logger,
-			ErrorHandling: HTTPErrorOnError,
-			Registry:      reg,
-		})
-		continueHandler := HandlerFor(reg, HandlerOpts{
-			ErrorLog:      logger,
-			ErrorHandling: ContinueOnError,
-			Registry:      reg,
-		})
-		panicHandler := HandlerFor(reg, HandlerOpts{
-			ErrorLog:      logger,
-			ErrorHandling: PanicOnError,
-			Registry:      reg,
+			cntVec = prometheus.NewCounterVec(
+				prometheus.CounterOpts{
+					Name:        "name",
+					Help:        "docstring",
+					ConstLabels: prometheus.Labels{"constname": "constvalue"},
+				},
+				[]string{"labelname"},
+			)
+			cntVec.WithLabelValues("val1").Inc()
+			cntVec.WithLabelValues("val2").Inc()
+			reg.MustRegister(cntVec)
+
+			reg.MustRegister(errorCollector{})
+
+			logBuf = &bytes.Buffer{}
+			logger := log.New(logBuf, "", 0)
+
+			errorHandler = HandlerFor(reg, HandlerOpts{
+				ErrorLog:      logger,
+				ErrorHandling: HTTPErrorOnError,
+				Registry:      reg,
+			})
+			continueHandler = HandlerFor(reg, HandlerOpts{
+				ErrorLog:      logger,
+				ErrorHandling: ContinueOnError,
+				Registry:      reg,
+			})
+			panicHandler = HandlerFor(reg, HandlerOpts{
+				ErrorLog:      logger,
+				ErrorHandling: PanicOnError,
+				Registry:      reg,
+			})
 		})
 
 		wantMsg := `error gathering metrics: error collecting metric Desc{fqName: "invalid_metric", help: "not helpful", constLabels: {}, variableLabels: []}: collect error
@@ -128,7 +141,6 @@ the_count 0
 `
 
 		It("should return a http error on error", func() {
-			logBuf.Reset()
 			ctx := createRequestCtx("GET", "/http")
 			ctx.Request.Header.Add("Accept", "text/plain")
 			errorHandler(ctx)
@@ -141,7 +153,6 @@ the_count 0
 		})
 
 		It("should continue on error", func() {
-			logBuf.Reset()
 			ctx := createRequestCtx("GET", "/continue")
 			ctx.Request.Header.Add("Accept", "text/plain")
 			continueHandler(ctx)
@@ -152,7 +163,6 @@ the_count 0
 		})
 
 		It("should panic on error", func() {
-			logBuf.Reset()
 			defer func() {
 				if err := recover(); err == nil {
 					Fail("expected panic from panicHandler")

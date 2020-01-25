@@ -1,10 +1,10 @@
-package promquery
+package promsql
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-type NamedQueryCollector struct {
+type NamedQuery struct {
 	parent            *QueryCollector
 	name              string
 	TotalCalls        prometheus.Counter
