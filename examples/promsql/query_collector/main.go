@@ -10,7 +10,6 @@ import (
 	"github.com/lab259/go-rscsrv"
 	"github.com/lab259/go-rscsrv-prometheus/examples/promsql/query_collector/services"
 	"github.com/lab259/go-rscsrv-prometheus/promhermes"
-	"github.com/lab259/go-rscsrv-prometheus/promsql"
 	h "github.com/lab259/hermes"
 	"github.com/lab259/hermes/middlewares"
 )
@@ -66,13 +65,13 @@ func main() {
 			panic(err)
 		}
 
-		usersQuery := services.DefaultQueryCollectorService.NewNamedQuery("users_query")
-		usersInsert := services.DefaultQueryCollectorService.NewNamedQuery("users_insert")
-		usersDelete := services.DefaultQueryCollectorService.NewNamedQuery("users_delete")
+		usersQuery := services.DefaultQueryCollectorService.NamedQuery("users_query")
+		usersInsert := services.DefaultQueryCollectorService.NamedQuery("users_insert")
+		usersDelete := services.DefaultQueryCollectorService.NamedQuery("users_delete")
 
-		usersQuerySQL := promsql.NewSQLQuery(usersQuery, db)
-		usersInsertSQL := promsql.NewSQLQuery(usersInsert, db)
-		usersDeleteSQL := promsql.NewSQLQuery(usersDelete, db)
+		usersQuerySQL := usersQuery(db)
+		usersInsertSQL := usersInsert(db)
+		usersDeleteSQL := usersDelete(db)
 
 		var lastInsertedID int64 = 1
 		var lastDeletedID int64 = 1

@@ -1,14 +1,14 @@
 package services
 
 import (
-	"github.com/lab259/go-rscsrv-prometheus/promquery"
+	"github.com/lab259/go-rscsrv-prometheus/promsql"
 	_ "github.com/lib/pq"
 )
 
 var DefaultQueryCollectorService QueryCollectorService
 
 type QueryCollectorService struct {
-	*promquery.QueryCollector
+	*promsql.QueryCollector
 }
 
 // Name implements the rscsrv.Service interface.
@@ -17,7 +17,7 @@ func (srv *QueryCollectorService) Name() string {
 }
 
 func (service *QueryCollectorService) Start() error {
-	service.QueryCollector = promquery.NewQueryCollector(&promquery.QueryCollectorOpts{
+	service.QueryCollector = promsql.NewQueryCollector(&promsql.QueryCollectorOpts{
 		Prefix: "query_collector",
 	})
 
