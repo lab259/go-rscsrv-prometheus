@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/valyala/fasthttp"
 )
 
 type errorCollector struct{}
@@ -45,52 +46,62 @@ func (b blockingCollector) Collect(ch chan<- prometheus.Metric) {
 
 var _ = Describe("Handler", func() {
 	When("using custom error handling", func() {
-		// Create a registry that collects a MetricFamily with two elements,
-		// another with one, and reports an error. Further down, we'll use the
-		// same registry in the HandlerOpts.
-		reg := prometheus.NewRegistry()
-
-		cnt := prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "the_count",
-			Help: "Ah-ah-ah! Thunder and lightning!",
-		})
-		reg.MustRegister(cnt)
-
-		cntVec := prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name:        "name",
-				Help:        "docstring",
-				ConstLabels: prometheus.Labels{"constname": "constvalue"},
-			},
-			[]string{"labelname"},
+		var (
+			reg     *prometheus.Registry
+			cnt     prometheus.Counter
+			cntVec  *prometheus.CounterVec
+			logBuf  *bytes.Buffer
+			handler fasthttp.RequestHandler
 		)
-		cntVec.WithLabelValues("val1").Inc()
-		cntVec.WithLabelValues("val2").Inc()
-		reg.MustRegister(cntVec)
 
-		reg.MustRegister(errorCollector{})
+		BeforeEach(func() {
+			// Create a registry that collects a MetricFamily with two elements,
+			// another with one, and reports an error. Further down, we'll use the
+			// same registry in the HandlerOpts.
+			reg = prometheus.NewRegistry()
 
-		logBuf := &bytes.Buffer{}
-		logger := log.New(logBuf, "", 0)
+			cnt = prometheus.NewCounter(prometheus.CounterOpts{
+				Name: "the_count",
+				Help: "Ah-ah-ah! Thunder and lightning!",
+			})
+			reg.MustRegister(cnt)
 
-		router := hermes.DefaultRouter()
-		router.Get("/http", HandlerFor(reg, HandlerOpts{
-			ErrorLog:      logger,
-			ErrorHandling: HTTPErrorOnError,
-			Registry:      reg,
-		}))
-		router.Get("/continue", HandlerFor(reg, HandlerOpts{
-			ErrorLog:      logger,
-			ErrorHandling: ContinueOnError,
-			Registry:      reg,
-		}))
-		router.Get("/panic", HandlerFor(reg, HandlerOpts{
-			ErrorLog:      logger,
-			ErrorHandling: PanicOnError,
-			Registry:      reg,
-		}))
+			cntVec = prometheus.NewCounterVec(
+				prometheus.CounterOpts{
+					Name:        "name",
+					Help:        "docstring",
+					ConstLabels: prometheus.Labels{"constname": "constvalue"},
+				},
+				[]string{"labelname"},
+			)
+			cntVec.WithLabelValues("val1").Inc()
+			cntVec.WithLabelValues("val2").Inc()
+			reg.MustRegister(cntVec)
 
-		handler := router.Handler()
+			reg.MustRegister(errorCollector{})
+
+			logBuf = &bytes.Buffer{}
+			logger := log.New(logBuf, "", 0)
+
+			router := hermes.DefaultRouter()
+			router.Get("/http", HandlerFor(reg, HandlerOpts{
+				ErrorLog:      logger,
+				ErrorHandling: HTTPErrorOnError,
+				Registry:      reg,
+			}))
+			router.Get("/continue", HandlerFor(reg, HandlerOpts{
+				ErrorLog:      logger,
+				ErrorHandling: ContinueOnError,
+				Registry:      reg,
+			}))
+			router.Get("/panic", HandlerFor(reg, HandlerOpts{
+				ErrorLog:      logger,
+				ErrorHandling: PanicOnError,
+				Registry:      reg,
+			}))
+
+			handler = router.Handler()
+		})
 
 		wantMsg := `error gathering metrics: error collecting metric Desc{fqName: "invalid_metric", help: "not helpful", constLabels: {}, variableLabels: []}: collect error
 `
@@ -102,7 +113,7 @@ name{constname="constvalue",labelname="val2"} 1
 # HELP promhermes_metric_handler_errors_total Total number of internal errors encountered by the promhermes metric handler.
 # TYPE promhermes_metric_handler_errors_total counter
 promhermes_metric_handler_errors_total{cause="encoding"} 0
-promhermes_metric_handler_errors_total{cause="gathering"} 1
+promhermes_metric_handler_errors_total{cause="gathering"} 0
 # HELP the_count Ah-ah-ah! Thunder and lightning!
 # TYPE the_count counter
 the_count 0
@@ -117,14 +128,13 @@ name{constname="constvalue",labelname="val2"} 1
 # HELP promhermes_metric_handler_errors_total Total number of internal errors encountered by the promhermes metric handler.
 # TYPE promhermes_metric_handler_errors_total counter
 promhermes_metric_handler_errors_total{cause="encoding"} 0
-promhermes_metric_handler_errors_total{cause="gathering"} 2
+promhermes_metric_handler_errors_total{cause="gathering"} 1
 # HELP the_count Ah-ah-ah! Thunder and lightning!
 # TYPE the_count counter
 the_count 0
 `
 
 		It("should return a http error on error", func() {
-			logBuf.Reset()
 			ctx := createRequestCtx("GET", "/http")
 			ctx.Request.Header.Add("Accept", "text/plain")
 			handler(ctx)
@@ -141,17 +151,24 @@ the_count 0
 		})
 
 		It("should continue on error", func() {
-			logBuf.Reset()
 			ctx := createRequestCtx("GET", "/continue")
 			ctx.Request.Header.Add("Accept", "text/plain")
+
 			handler(ctx)
 			Expect(ctx.Response.StatusCode()).To(Equal(hermes.StatusOK))
 			Expect(logBuf.String()).To(Equal(wantMsg))
-			Expect(string(ctx.Response.Body())).To(Or(Equal(wantOKBody1), Equal(wantOKBody2)))
+			Expect(string(ctx.Response.Body())).To(Equal(wantOKBody1))
+
+			logBuf.Reset()
+			ctx.Response.Reset()
+			handler(ctx)
+
+			Expect(ctx.Response.StatusCode()).To(Equal(hermes.StatusOK))
+			Expect(logBuf.String()).To(Equal(wantMsg))
+			Expect(string(ctx.Response.Body())).To(Equal(wantOKBody2))
 		})
 
 		It("should panic on error", func() {
-			logBuf.Reset()
 			defer func() {
 				if err := recover(); err == nil {
 					Fail("expected panic from panicHandler")

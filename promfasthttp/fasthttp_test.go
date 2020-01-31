@@ -119,7 +119,7 @@ name{constname="constvalue",labelname="val2"} 1
 # HELP promfasthttp_metric_handler_errors_total Total number of internal errors encountered by the promfasthttp metric handler.
 # TYPE promfasthttp_metric_handler_errors_total counter
 promfasthttp_metric_handler_errors_total{cause="encoding"} 0
-promfasthttp_metric_handler_errors_total{cause="gathering"} 1
+promfasthttp_metric_handler_errors_total{cause="gathering"} 0
 # HELP the_count Ah-ah-ah! Thunder and lightning!
 # TYPE the_count counter
 the_count 0
@@ -134,7 +134,7 @@ name{constname="constvalue",labelname="val2"} 1
 # HELP promfasthttp_metric_handler_errors_total Total number of internal errors encountered by the promfasthttp metric handler.
 # TYPE promfasthttp_metric_handler_errors_total counter
 promfasthttp_metric_handler_errors_total{cause="encoding"} 0
-promfasthttp_metric_handler_errors_total{cause="gathering"} 2
+promfasthttp_metric_handler_errors_total{cause="gathering"} 1
 # HELP the_count Ah-ah-ah! Thunder and lightning!
 # TYPE the_count counter
 the_count 0
@@ -156,10 +156,17 @@ the_count 0
 			ctx := createRequestCtx("GET", "/continue")
 			ctx.Request.Header.Add("Accept", "text/plain")
 			continueHandler(ctx)
+			Expect(ctx.Response.StatusCode()).To(Equal(fasthttp.StatusOK))
+			Expect(logBuf.String()).To(Equal(wantMsg))
+			Expect(string(ctx.Response.Body())).To(Equal(wantOKBody1))
+
+			logBuf.Reset()
+			ctx.Response.Reset()
+			continueHandler(ctx)
 
 			Expect(ctx.Response.StatusCode()).To(Equal(fasthttp.StatusOK))
 			Expect(logBuf.String()).To(Equal(wantMsg))
-			Expect(string(ctx.Response.Body())).To(Or(Equal(wantOKBody1), Equal(wantOKBody2)))
+			Expect(string(ctx.Response.Body())).To(Equal(wantOKBody2))
 		})
 
 		It("should panic on error", func() {
