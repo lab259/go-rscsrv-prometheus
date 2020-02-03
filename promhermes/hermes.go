@@ -27,6 +27,7 @@ import (
 	"github.com/lab259/hermes"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
+	"github.com/valyala/fasthttp"
 )
 
 const (
@@ -218,13 +219,27 @@ func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) hermes.Handler {
 
 		done := make(chan struct{})
 		panicChan := make(chan interface{}, 1)
+
+		newRawReqCtx := &fasthttp.RequestCtx{}
+		req.Raw().Request.CopyTo(&newRawReqCtx.Request)
+
+		newReq := hermes.AcquireRequest(ctx, newRawReqCtx)
+		newRes := hermes.AcquireResponse(newReq.Raw())
+
 		go func() {
 			defer func() {
 				if p := recover(); p != nil {
 					panicChan <- p
 				}
 			}()
-			r = h(req, res)
+
+			defer func() {
+				hermes.ReleaseRequest(newReq)
+				hermes.ReleaseResponse(newRes)
+			}()
+
+			r = h(newReq, newRes)
+
 			close(done)
 		}()
 
