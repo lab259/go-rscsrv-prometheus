@@ -46,5 +46,8 @@ jobs:
     - name: misspell
       run: go run github.com/client9/misspell/cmd/misspell ./
 
+    - name: Setup docker-compose services
+      run: make dco-test-up
+
     - name: Test
       run: go run github.com/onsi/ginkgo/ginkgo -r -requireSuite --randomizeAllSpecs --randomizeSuites --failOnPending --cover --trace --race --compilers=2 --timeout=2m
