@@ -37,5 +37,14 @@ jobs:
     - name: Examine source code
       run: go vet ./...
 
+    - name: gocyclo
+      run: go run github.com/fzipp/gocyclo -over 65 ./
+
+    - name: ineffassign
+      run: go run github.com/gordonklaus/ineffassign ./
+
+    - name: misspell
+      run: go run github.com/client9/misspell/cmd/misspell ./
+
     - name: Test
       run: go run github.com/onsi/ginkgo/ginkgo -r -requireSuite --randomizeAllSpecs --randomizeSuites --failOnPending --cover --trace --race --compilers=2 --timeout=2m
