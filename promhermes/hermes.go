@@ -239,6 +239,7 @@ func HandlerFor(reg prometheus.Gatherer, opts HandlerOpts) hermes.Handler {
 			}()
 
 			r = h(newReq, newRes)
+			r.End()
 
 			close(done)
 		}()
