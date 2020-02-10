@@ -1,4 +1,4 @@
-# go-rscsrv-prometheus [![CircleCI](https://circleci.com/gh/lab259/go-rscsrv-prometheus.svg?style=svg&circle-token=870af825230a3bc9c94a153dad99b49cbebd696f)](https://circleci.com/gh/lab259/go-rscsrv-prometheus)
+# go-rscsrv-prometheus ![Go](https://github.com/lab259/go-rscsrv-prometheus/workflows/Go/badge.svg)
 
 ## Getting Started
 

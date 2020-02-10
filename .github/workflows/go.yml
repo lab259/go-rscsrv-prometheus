@@ -1,0 +1,53 @@
+name: Go
+on: [push]
+jobs:
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Set up Go 1.12
+      uses: actions/setup-go@v1
+      with:
+        go-version: 1.12
+      id: go
+
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v1
+      
+    - name: Cache go modules
+      uses: actions/cache@v1
+      env:
+        cache-name: cache-go-modules
+      with:
+        path: /go/pkg/mod
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-build-${{ env.cache-name }}-
+          ${{ runner.os }}-build-
+          ${{ runner.os }}-
+
+    - name: Get dependencies
+      run: go mod download
+
+    - name: Ensure canonical style
+      run: test -z $(go fmt ./...)
+
+    - name: Examine source code
+      run: go vet ./...
+
+    - name: gocyclo
+      run: go run github.com/fzipp/gocyclo -over 65 ./
+
+    - name: ineffassign
+      run: go run github.com/gordonklaus/ineffassign ./
+
+    - name: misspell
+      run: go run github.com/client9/misspell/cmd/misspell ./
+
+    - name: Setup docker-compose services
+      run: make dco-test-up
+
+    - name: Test
+      run: go run github.com/onsi/ginkgo/ginkgo -r -requireSuite --randomizeAllSpecs --randomizeSuites --failOnPending --cover --trace --race --compilers=2 --timeout=2m

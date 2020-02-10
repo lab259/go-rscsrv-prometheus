@@ -78,7 +78,7 @@ func NewQueryCollector(opts *QueryCollectorOpts) *QueryCollector {
 }
 
 // NewNamedQuery returns a new instance of `NamedQuery` with its metrics
-// initalized with the query name as a label.
+// initialized with the query name as a label.
 func (collector *QueryCollector) NewNamedQuery(name string) *NamedQuery {
 	return &NamedQuery{
 		parent:            collector,
